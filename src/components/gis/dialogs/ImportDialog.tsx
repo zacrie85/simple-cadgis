@@ -30,9 +30,9 @@ export default function ImportDialog() {
   const [progres, setProgres] = useState<ProgresInfo>({ bytes: 0, total: 0 });
   const [pesanProses, setPesanProses] = useState("");
 
-  const headersRef = useRef<string[]>([]);
-  const rowsRef = useRef<string[][]>([]);
-  const totalRowsRef = useRef(0);
+  const semuaRowsRef = useRef<string[][]>([]);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [gunakanHeader, setGunakanHeader] = useState(true);
   const fiturRef = useRef<{ points: GisPoint[]; shapes: GisShape[] }>({ points: [], shapes: [] });
   const workerRef = useRef<ParseStream | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -45,6 +45,88 @@ export default function ImportDialog() {
   const [kolomElev, setKolomElev] = useState(-1);
   const [kolomJudul, setKolomJudul] = useState(-1);
 
+  // Tebak apakah baris pertama berupa header (nama kolom) atau sudah data.
+  const tebakGunakanHeader = (rows: string[][]): boolean => {
+    const barisPertama = (rows[0] ?? []).map((v) => String(v ?? "").trim()).filter((v) => v !== "");
+    if (barisPertama.length === 0) return true;
+    const angka = barisPertama.filter((v) => !isNaN(parseFloat(v.replace(",", ".")))).length;
+    return angka / barisPertama.length < 0.5;
+  };
+
+  // Deteksi nama kolom + kolom koordinat/elevasi/judul dari nama header DAN isi kolom.
+  const jalankanDeteksi = (gunakan: boolean, rows: string[][]) => {
+    const barisData = gunakan ? rows.slice(1) : rows;
+    const nKolom = rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const barisPertama = rows[0] ?? [];
+    const headersBaru = Array.from({ length: nKolom }, (_, i) =>
+      gunakan ? String(barisPertama[i] ?? "").trim() || `Kolom ${i + 1}` : `Kolom ${i + 1}`
+    );
+    setHeaders(headersBaru);
+
+    const sampel = barisData.slice(0, 50);
+    const nonKosong = (ci: number) => sampel.map((r) => String(r[ci] ?? "").trim()).filter((v) => v !== "");
+    const angkaDari = (v: string) => parseFloat(v.replace(",", "."));
+    const semuaAngka = (list: string[]) => list.length > 0 && list.every((v) => !isNaN(angkaDari(v)));
+
+    // — kolom koordinat gabungan: dari nama header, lalu dari isi kolom
+    let idxGab = headersBaru.findIndex((h) => /coord|koordinat|lat.*lng|titik|point/i.test(h));
+    if (idxGab < 0) {
+      let terbaik = -1;
+      let skorTerbaik = 0;
+      for (let ci = 0; ci < nKolom; ci++) {
+        const ne = nonKosong(ci);
+        if (ne.length < 2) continue;
+        const skor = ne.filter((v) => parseKolomKoordinat(v) !== null).length / ne.length;
+        if (skor >= 0.6 && skor > skorTerbaik) {
+          terbaik = ci;
+          skorTerbaik = skor;
+        }
+      }
+      idxGab = terbaik;
+    }
+    setKolomGabung(idxGab >= 0 ? idxGab : 0);
+
+    // — kolom lat & lng terpisah: dari nama header, lalu dari rentang angka
+    let idxLat = headersBaru.findIndex((h) => /^(lat|latitude|lintang|y)\b/i.test(h.trim()));
+    let idxLng = headersBaru.findIndex((h) => /^(lng|lon|long|longitude|bujur|x)\b/i.test(h.trim()));
+    if (idxLat < 0 && idxLng < 0) {
+      const kolomAngka: { ci: number; maxAbs: number }[] = [];
+      for (let ci = 0; ci < nKolom; ci++) {
+        if (ci === idxGab) continue;
+        const ne = nonKosong(ci);
+        if (!semuaAngka(ne)) continue;
+        kolomAngka.push({ ci, maxAbs: Math.max(...ne.map((v) => Math.abs(angkaDari(v)))) });
+      }
+      const calLat = kolomAngka.filter((c) => c.maxAbs <= 90);
+      const calLng = kolomAngka.filter((c) => c.maxAbs > 90 && c.maxAbs <= 180);
+      // hanya pakai bila ada pasangan yang masuk akal (ada kandidat lng > 90)
+      if (calLat.length && calLng.length) {
+        idxLat = calLat[0].ci;
+        idxLng = calLng[0].ci;
+      }
+    }
+    setKolomLat(idxLat >= 0 ? idxLat : 0);
+    setKolomLng(idxLng >= 0 ? idxLng : Math.min(1, headersBaru.length - 1));
+    // tidak ada kolom gabungan tapi lat & lng ketemu → pakai mode terpisah otomatis
+    if (idxGab < 0 && idxLat >= 0 && idxLng >= 0) setModeKoordinat("pisah");
+
+    // — kolom elevasi & judul
+    const idxElev = headersBaru.findIndex((h) => /elev|ketinggian|mdpl|\bz\b|\brl\b/i.test(h.trim()));
+    setKolomElev(idxElev);
+    let idxJudul = headersBaru.findIndex((h) => /nama|judul|title|\bid\b|\bno\b|deskripsi|keterangan/i.test(h.trim()));
+    if (idxJudul < 0) {
+      for (let ci = 0; ci < nKolom; ci++) {
+        if (ci === idxGab || ci === idxLat || ci === idxLng || ci === idxElev) continue;
+        const ne = nonKosong(ci);
+        if (ne.length >= 2 && ne.filter((v) => isNaN(angkaDari(v))).length / ne.length >= 0.6) {
+          idxJudul = ci;
+          break;
+        }
+      }
+    }
+    setKolomJudul(idxJudul >= 0 ? idxJudul : 0);
+  };
+
   const tutup = useCallback(() => {
     workerRef.current?.hentikan();
     setDialog("import", false);
@@ -52,8 +134,10 @@ export default function ImportDialog() {
       setFase("pilih");
       setProgres({ bytes: 0, total: 0 });
       setNamaFile("");
-      headersRef.current = [];
-      rowsRef.current = [];
+      semuaRowsRef.current = [];
+      setHeaders([]);
+      setGunakanHeader(true);
+      setModeKoordinat("gabungan");
       fiturRef.current = { points: [], shapes: [] };
     }, 200);
   }, [setDialog]);
@@ -65,34 +149,18 @@ export default function ImportDialog() {
     setJenis(isKml ? "kml" : "tabel");
     setFase("proses");
     setProgres({ bytes: 0, total: file.size });
-    headersRef.current = [];
-    rowsRef.current = [];
-    totalRowsRef.current = 0;
+    semuaRowsRef.current = [];
+    setHeaders([]);
+    setGunakanHeader(true);
+    setModeKoordinat("gabungan");
     fiturRef.current = { points: [], shapes: [] };
 
     const parser = new ParseStream();
     workerRef.current = parser;
     parser.mulai(file, {
       onProgress: (p) => setProgres({ bytes: p.bytes, total: p.total, rows: p.rows, features: p.features }),
-      onRows: (rows, total) => {
-        if (headersRef.current.length === 0 && rows.length > 0) {
-          headersRef.current = rows[0].map((h, i) => h.trim() || `Kolom ${i + 1}`);
-          rowsRef.current = rows.slice(1);
-          // tebak kolom koordinat gabungan dari header
-          const idx = headersRef.current.findIndex((h) => /coord|koordinat|lat.*lng|titik/i.test(h));
-          setKolomGabung(idx >= 0 ? idx : 0);
-          const idxLat = headersRef.current.findIndex((h) => /^lat/i.test(h));
-          const idxLng = headersRef.current.findIndex((h) => /^(lng|lon|long)/i.test(h));
-          setKolomLat(idxLat >= 0 ? idxLat : 0);
-          setKolomLng(idxLng >= 0 ? idxLng : Math.min(1, headersRef.current.length - 1));
-          const idxElev = headersRef.current.findIndex((h) => /elev|ketinggian|z|mdpl|rl/i.test(h));
-          setKolomElev(idxElev);
-          const idxJudul = headersRef.current.findIndex((h) => /nama|judul|title|id|no/i.test(h));
-          setKolomJudul(idxElev >= 0 ? idxJudul : 0);
-        } else {
-          rowsRef.current.push(...rows);
-        }
-        totalRowsRef.current = total;
+      onRows: (rows) => {
+        semuaRowsRef.current.push(...rows);
       },
       onFeatures: (points, shapes) => {
         for (const p of points) {
@@ -125,12 +193,11 @@ export default function ImportDialog() {
       },
       onDone: (ringkas) => {
         setPesanProses(ringkas);
-        if (jenis === "tabel" || rowsRef.current.length > 0) {
-          if (headersRef.current.length > 0) {
-            setFase("peta-kolom");
-          } else {
-            terapkanFiturKml();
-          }
+        if (semuaRowsRef.current.length > 0) {
+          const gh = tebakGunakanHeader(semuaRowsRef.current);
+          setGunakanHeader(gh);
+          jalankanDeteksi(gh, semuaRowsRef.current);
+          setFase("peta-kolom");
         } else {
           terapkanFiturKml();
         }
@@ -158,7 +225,7 @@ export default function ImportDialog() {
 
   const hitungDanTambah = () => {
     const st = useGis.getState();
-    const semuaRows = rowsRef.current;
+    const semuaRows = gunakanHeader ? semuaRowsRef.current.slice(1) : semuaRowsRef.current;
     const baru: GisPoint[] = [];
     let gagal = 0;
 
@@ -181,7 +248,7 @@ export default function ImportDialog() {
       }
       const elevRaw = kolomElev >= 0 ? parseFloat(String(ambil(row, kolomElev)).replace(",", ".")) : NaN;
       const attrs: Record<string, string> = {};
-      headersRef.current.forEach((h, i) => {
+      headers.forEach((h, i) => {
         const v = ambil(row, i);
         if (v !== "") attrs[h] = v;
       });
@@ -227,12 +294,29 @@ export default function ImportDialog() {
 
   if (!open) return null;
 
-  const pratinjau = rowsRef.current.slice(0, 6);
-  const opsiKolom = headersRef.current.map((h, i) => (
+  const semuaRows = semuaRowsRef.current;
+  const barisData = gunakanHeader ? semuaRows.slice(1) : semuaRows;
+  const pratinjau = barisData.slice(0, 6);
+  const opsiKolom = headers.map((h, i) => (
     <option key={i} value={i}>
       {h}
     </option>
   ));
+  const contohNilai = (i: number) => {
+    const v = String(barisData[0]?.[i] ?? "").trim();
+    return v.length > 42 ? v.slice(0, 42) + "…" : v || "—";
+  };
+  const sorotKolom = (i: number): { cls: string; label: string } => {
+    const isKoor = modeKoordinat === "gabungan" ? i === kolomGabung : i === kolomLat || i === kolomLng;
+    if (isKoor)
+      return {
+        cls: "bg-blue-100/80 text-blue-800",
+        label: modeKoordinat === "gabungan" ? "koordinat" : i === kolomLat ? "lat" : "lng",
+      };
+    if (i === kolomElev) return { cls: "bg-emerald-50 text-emerald-700", label: "elevasi" };
+    if (i === kolomJudul) return { cls: "bg-violet-50 text-violet-700", label: "judul" };
+    return { cls: "", label: "" };
+  };
 
   return (
     <FloatingWindow judul="Impor Data — Excel / CSV / KML / KMZ" onClose={tutup} lebar="max-w-3xl w-[min(94vw,56rem)]">
@@ -320,12 +404,32 @@ export default function ImportDialog() {
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
             <div className="text-sm">
               <p className="font-medium text-emerald-800">
-                {totalRowsRef.current.toLocaleString("id-ID")} baris berhasil dibaca
+                {barisData.length.toLocaleString("id-ID")} baris data berhasil dibaca
               </p>
               <p className="text-emerald-600 text-xs mt-0.5">
-                Sekarang pilih kolom yang berisi koordinat.
+                Nama kolom dari file sudah terbaca — pilih kolom koordinat di bawah.
               </p>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={gunakanHeader}
+                onChange={(e) => {
+                  setGunakanHeader(e.target.checked);
+                  jalankanDeteksi(e.target.checked, semuaRowsRef.current);
+                }}
+                className="h-4 w-4"
+              />
+              Baris pertama berisi nama kolom (header)
+            </label>
+            {!gunakanHeader && (
+              <p className="text-xs text-slate-400">
+                Nama kolom otomatis (Kolom 1, Kolom 2, …) — baris pertama dihitung sebagai data.
+              </p>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -352,6 +456,9 @@ export default function ImportDialog() {
                   >
                     {opsiKolom}
                   </select>
+                  <span className="mt-1 block truncate text-[11px] text-slate-400">
+                    Contoh isi: <code className="rounded bg-slate-100 px-1">{contohNilai(kolomGabung)}</code>
+                  </span>
                 </label>
               ) : (
                 <>
@@ -360,12 +467,18 @@ export default function ImportDialog() {
                     <select value={kolomLat} onChange={(e) => setKolomLat(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
                       {opsiKolom}
                     </select>
+                    <span className="mt-1 block truncate text-[11px] text-slate-400">
+                      Contoh isi: <code className="rounded bg-slate-100 px-1">{contohNilai(kolomLat)}</code>
+                    </span>
                   </label>
                   <label className="block">
                     <span className="text-xs font-medium text-slate-500">Kolom Longitude</span>
                     <select value={kolomLng} onChange={(e) => setKolomLng(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
                       {opsiKolom}
                     </select>
+                    <span className="mt-1 block truncate text-[11px] text-slate-400">
+                      Contoh isi: <code className="rounded bg-slate-100 px-1">{contohNilai(kolomLng)}</code>
+                    </span>
                   </label>
                 </>
               )}
@@ -375,6 +488,11 @@ export default function ImportDialog() {
                   <option value={-1}>— Tidak ada —</option>
                   {opsiKolom}
                 </select>
+                {kolomElev >= 0 && (
+                  <span className="mt-1 block truncate text-[11px] text-slate-400">
+                    Contoh isi: <code className="rounded bg-slate-100 px-1">{contohNilai(kolomElev)}</code>
+                  </span>
+                )}
               </label>
               <label className="block">
                 <span className="text-xs font-medium text-slate-500">Kolom judul titik (opsional)</span>
@@ -382,6 +500,11 @@ export default function ImportDialog() {
                   <option value={-1}>— Otomatis —</option>
                   {opsiKolom}
                 </select>
+                {kolomJudul >= 0 && (
+                  <span className="mt-1 block truncate text-[11px] text-slate-400">
+                    Contoh isi: <code className="rounded bg-slate-100 px-1">{contohNilai(kolomJudul)}</code>
+                  </span>
+                )}
               </label>
             </div>
           </div>
@@ -392,17 +515,25 @@ export default function ImportDialog() {
               <table className="min-w-full text-xs">
                 <thead>
                   <tr className="bg-slate-50">
-                    {headersRef.current.map((h, i) => (
-                      <th key={i} className="px-2.5 py-2 text-left font-semibold text-slate-600 border-b whitespace-nowrap">
-                        {h}
-                      </th>
-                    ))}
+                    {headers.map((h, i) => {
+                      const s = sorotKolom(i);
+                      return (
+                        <th key={i} className={`px-2.5 py-2 text-left font-semibold border-b whitespace-nowrap ${s.cls}`}>
+                          {h}
+                          {s.label && (
+                            <span className="ml-1.5 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 align-middle">
+                              {s.label}
+                            </span>
+                          )}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
                   {pratinjau.map((row, ri) => (
                     <tr key={ri} className="border-b last:border-0">
-                      {headersRef.current.map((_, ci) => (
+                      {headers.map((_, ci) => (
                         <td key={ci} className="px-2.5 py-1.5 text-slate-700 whitespace-nowrap max-w-[180px] truncate">
                           {row[ci] ?? ""}
                         </td>

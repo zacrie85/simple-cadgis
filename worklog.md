@@ -99,3 +99,22 @@ Stage Summary:
 - Tiga fitur baru aktif: Blok (drag kotak seleksi, Shift=tambah, klik=toggle), Hapus Terpilih (dengan hitungan), Zoom Kotak (auto-exit setelah zoom).
 - Semua tombol tetap di panel atas (sesuai syarat tanpa panel samping/bawah).
 - Screenshot: download/uji-blok-aktif.png, uji-blok-drag.png, uji-hapus-terpilih.png, uji-zoom-kotak.png.
+
+---
+Task ID: 6
+Agent: Super Z (main agent)
+Task: Perbaikan impor Excel — header nama kolom tidak tampil (hanya "Kolom 1, Kolom 2, …") + upgrade pemilih kolom koordinat.
+
+Work Log:
+- Akar masalah: parser XLSX streaming satu-pass membaca entri ZIP berurutan; pada file buatan Excel xl/worksheets/sheet1.xml muncul SEBELUM xl/sharedStrings.xml sehingga saat baris diparse tabel shared strings masih kosong — semua sel teks (termasuk HEADER) jadi string kosong; sel angka (koordinat) tetap terbaca (persis gejala laporan user).
+- Solusi worker (parse-worker.ts): parseXlsx DUA-PASS — pass 1 khusus mengumpulkan sharedStrings sampai tuntas, pass 2 mem-parse sheet dengan tabel string lengkap; progres dibagi 15%/85%; sekalian memperbaiki proteksi MAX_ROWS yang tadinya error-nya tertelan try/catch (kini mengirim error & berhenti betulan).
+- Upgrade ImportDialog: header kini state + toggle "Baris pertama berisi nama kolom (header)"; tebakGunakanHeader otomatis melepas toggle bila baris pertama mayoritas angka; jalankanDeteksi memilih kolom gabungan/lat/lng/elevasi/judul dari NAMA header lalu fallback dari ISI kolom (skor parse koordinat >=60%, rentang angka lat<=90 & lng 90-180, kolom teks dominan utk judul); auto-pindah ke mode "2 kolom terpisah" bila tak ada kolom gabungan tapi lat+lng ketemu; contoh isi kolom tampil di tiap dropdown; pratinjau menyorot kolom terpilih (badge koordinat/lat/lng/elevasi/judul); mode & pemetaan direset tiap impor baru.
+- 2 bug ditemukan saat uji menyeluruh & diperbaiki: (1) mode koordinat tersisa dari impor sebelumnya (CSV pisah → XLSX masih pisah) — kini direset; (2) fallback lat/lng rakus memilih kolom "No"/"Elevasi" saat tak ada kandidat lng>90 — kini fallback hanya dipakai bila ada pasangan lat+lng yang masuk akal.
+- File uji: scripts/buat-xlsx-uji.py → samples/uji-header-excel.xlsx (urutan ZIP ala Excel: sheet SEBELUM sharedStrings, 158 string unik, 51 baris) & samples/uji-tanpa-header.csv (12 baris numeric murni); scripts/uji-worker-xlsx.mjs (replikasi dua-pass di bun — header terbaca sempurna).
+- Kendala verifikasi: upload agent-browser dengan path RELATIF menghasilkan File tak terbaca → worker kirim "network error" (bukan bug aplikasi); solusi selalu pakai path absolut. Juga "network error" sesaat setelah Hot Reload worker (hilang setelah reload halaman).
+- Verifikasi Agent Browser end-to-end: XLSX → "50 baris data", dropdown berisi nama kolom asli (Koordinat (Lat,Lng) terpilih otomatis, Elevasi (m), No), badge sorot di pratinjau, contoh isi tampil, 50 titik masuk peta; CSV tanpa header → toggle otomatis nonaktif, 12 baris data, mode pisah otomatis (Kolom 1 & 2), 12 titik masuk; toggle header manual OFF → 51 baris + nama Kolom N + badge koordinat pindah ke Kolom 4 (deteksi isi), ON → kembali 50 baris + header asli; regresi KMZ aman (2 titik + 1 poligon); lint bersih; nol error console/server.
+
+Stage Summary:
+- Header Excel/CSV kini tampil dengan nama kolom asli dari file; user bisa memilih kolom koordinat (gabungan/lat+lng), elevasi, dan judul dari dropdown bernama.
+- Toggle header + deteksi berbasis isi membuat file tanpa header pun tetap bisa diimpor benar.
+- Artefak uji: samples/uji-header-excel.xlsx, samples/uji-tanpa-header.csv, download/uji-header-excel.png, download/uji-header-final.png, download/uji-header-toggle.png.

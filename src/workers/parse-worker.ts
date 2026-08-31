@@ -93,17 +93,73 @@ function parseRowXml(rowXml: string, sst: string[]): string[] {
   return cells;
 }
 
+/**
+ * Parse XLSX streaming DUA-PASS.
+ * Pass 1: kumpulkan xl/sharedStrings.xml (tabel teks) sampai tuntas.
+ * Pass 2: parse xl/worksheets/sheetN.xml dengan tabel string yang SUDAH lengkap.
+ * Ini wajib karena pada file buatan Excel urutan entri ZIP adalah sheet dulu,
+ * baru sharedStrings — kalau satu pass, semua sel teks (termasuk HEADER kolom)
+ * akan kosong karena tabel string belum terbaca.
+ */
 async function parseXlsx(file: File) {
   const sst: string[] = [];
   let totalRows = 0;
-  let bufferSheet = "";
+  let berhenti = false;
+  const pesanBatas = `Berhenti: melebihi batas ${MAX_ROWS.toLocaleString("id-ID")} baris (melindungi memori).`;
+
+  // ---------- PASS 1: sharedStrings ----------
   let bufferSst = "";
   let sisaSst: string[] = [];
-  let batch: string[][] = [];
-  let bytesRead = 0;
-
-  const rowRe = /<row[^>]*\/>|<row[^>]*>[\s\S]*?<\/row>/g;
+  let bytesReadSst = 0;
+  const decoderSst = new TextDecoder("utf-8");
   const siRe = /<si>([\s\S]*?)<\/si>/g;
+
+  const uzSst = new Unzip((zf: ZipFileCb) => {
+    if (zf.name !== "xl/sharedStrings.xml" || berhenti) {
+      zf.ondata = () => {};
+      zf.start();
+      return;
+    }
+    zf.ondata = (err, data, final) => {
+      if (err || berhenti) return;
+      bufferSst += decoderSst.decode(data, { stream: !final });
+      siRe.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      let last = 0;
+      while ((m = siRe.exec(bufferSst))) {
+        const teksSi = m[1].replace(/<t[^>]*>([\s\S]*?)<\/t>/g, "$1");
+        sisaSst.push(decodeXml(teksSi));
+        last = siRe.lastIndex;
+      }
+      if (sisaSst.length >= 1000) {
+        sst.push(...sisaSst);
+        sisaSst = [];
+      }
+      if (last > 0) bufferSst = bufferSst.slice(last);
+      bytesReadSst += data.byteLength;
+      // pass 1 dihitung 15% dari total progres
+      kirim({ type: "progress", bytes: bytesReadSst * 0.15, total: file.size, rows: 0 });
+    };
+    zf.start();
+  });
+  uzSst.register(UnzipInflate);
+  await alirankanFile(file, async (chunk) => {
+    if (berhenti) return;
+    uzSst.push(chunk, false);
+  });
+  uzSst.push(new Uint8Array(0), true);
+  if (sisaSst.length) {
+    sst.push(...sisaSst);
+    sisaSst = [];
+  }
+
+  // ---------- PASS 2: sheet dengan tabel string lengkap ----------
+  let bufferSheet = "";
+  let batch: string[][] = [];
+  let bytesReadSheet = 0;
+  let sheetDitangani = false;
+  const decoderSheet = new TextDecoder("utf-8");
+  const rowRe = /<row[^>]*\/>|<row[^>]*>[\s\S]*?<\/row>/g;
 
   const flushRows = () => {
     if (batch.length >= 2000) {
@@ -113,86 +169,57 @@ async function parseXlsx(file: File) {
     }
   };
 
-  const decoderSheet = new TextDecoder("utf-8");
-  const decoderSst = new TextDecoder("utf-8");
-
-  let sheetDitangani = false;
-
-  const uz = new Unzip((zf: ZipFileCb) => {
-    const nama = zf.name;
-    const isSheet = /^xl\/worksheets\/sheet\d+\.xml$/.test(nama) && !sheetDitangani;
-    const isSst = nama === "xl/sharedStrings.xml";
-    if (!isSheet && !isSst) {
+  const uzSheet = new Unzip((zf: ZipFileCb) => {
+    const isSheet = /^xl\/worksheets\/sheet\d+\.xml$/.test(zf.name) && !sheetDitangani;
+    if (!isSheet || berhenti) {
       zf.ondata = () => {};
       zf.start();
       return;
     }
-    if (isSheet) sheetDitangani = true;
-    const decoder = isSheet ? decoderSheet : decoderSst;
+    sheetDitangani = true;
     zf.ondata = (err, data, final) => {
-      if (err) return;
-      try {
-        const teks = decoder.decode(data, { stream: !final });
-        if (isSheet) {
-          bufferSheet += teks;
-          rowRe.lastIndex = 0;
-          let m: RegExpExecArray | null;
-          let last = 0;
-          while ((m = rowRe.exec(bufferSheet))) {
-            batch.push(parseRowXml(m[0], sst));
-            last = rowRe.lastIndex;
-            flushRows();
-            if (totalRows + batch.length >= MAX_ROWS) {
-              throw new Error(`Berhenti: melebihi batas ${MAX_ROWS.toLocaleString("id-ID")} baris (melindungi memori).`);
-            }
-          }
-          if (last > 0) bufferSheet = bufferSheet.slice(last);
-        } else {
-          bufferSst += teks;
-          siRe.lastIndex = 0;
-          let m: RegExpExecArray | null;
-          let last = 0;
-          while ((m = siRe.exec(bufferSst))) {
-            const teksSi = m[1].replace(/<t[^>]*>([\s\S]*?)<\/t>/g, "$1");
-            sisaSst.push(decodeXml(teksSi));
-            last = siRe.lastIndex;
-          }
-          if (sisaSst.length >= 1000) {
-            sst.push(...sisaSst);
-            sisaSst = [];
-          }
-          if (last > 0) bufferSst = bufferSst.slice(last);
+      if (err || berhenti) return;
+      bufferSheet += decoderSheet.decode(data, { stream: !final });
+      rowRe.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      let last = 0;
+      while ((m = rowRe.exec(bufferSheet))) {
+        batch.push(parseRowXml(m[0], sst));
+        last = rowRe.lastIndex;
+        flushRows();
+        if (totalRows + batch.length >= MAX_ROWS) {
+          berhenti = true;
+          kirim({ type: "error", message: pesanBatas });
+          return;
         }
-        bytesRead += data.byteLength;
-        kirim({
-          type: "progress",
-          bytes: bytesRead,
-          total: file.size,
-          rows: totalRows + batch.length,
-        });
-      } catch {
-        /* batas baris dilempar sebagai error utama di bawah */
       }
+      if (last > 0) bufferSheet = bufferSheet.slice(last);
+      bytesReadSheet += data.byteLength;
+      // pass 2 mengisi 15%..100% progres
+      kirim({
+        type: "progress",
+        bytes: file.size * 0.15 + bytesReadSheet * 0.85,
+        total: file.size,
+        rows: totalRows + batch.length,
+      });
     };
     zf.start();
   });
-  uz.register(UnzipInflate);
-
+  uzSheet.register(UnzipInflate);
   await alirankanFile(file, async (chunk) => {
-    uz.push(chunk, false);
+    if (berhenti) return;
+    uzSheet.push(chunk, false);
   });
-  uz.push(new Uint8Array(0), true);
+  if (!berhenti) uzSheet.push(new Uint8Array(0), true);
 
-  if (sisaSst.length) {
-    sst.push(...sisaSst);
-    sisaSst = [];
-  }
   if (batch.length) {
     totalRows += batch.length;
     kirim({ type: "rows", rows: batch, totalRows });
     batch = [];
   }
-  kirim({ type: "done", ringkas: `Excel selesai: ${totalRows.toLocaleString("id-ID")} baris dibaca.` });
+  if (!berhenti) {
+    kirim({ type: "done", ringkas: `Excel selesai: ${totalRows.toLocaleString("id-ID")} baris dibaca.` });
+  }
 }
 
 // ==================== CSV STREAMING ====================
