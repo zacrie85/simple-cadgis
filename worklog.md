@@ -274,3 +274,24 @@ Work Log:
 
 Stage Summary:
 - SIMPLE CADGIS v1.0.0 live di GitHub: kode ter-push, PWA online (Pages), installer Windows siap diunduh dari Releases. Ke depan: setiap push tag vX.Y.Z otomatis membangun installer baru; setiap push ke main otomatis deploy Pages.
+
+---
+Task ID: 15
+Agent: Super Z (main agent)
+Task: Dua upgrade — (1) kontrol tampil/sembunyi label titik/poligon/garis (semua / terpilih / sembunyi) yang ikut ke Google Earth saat ekspor KMZ/KML; (2) alat gambar baru: bulatan, elips, lengkung kiri/kanan, dan edit bentuk ala AutoCAD (lengkungkan ruas lurus).
+
+Work Log:
+- types.ts: GisPoint/GisShape + labelTampil?: boolean; ToolMode + bulatan/elips/lengkung-kiri/lengkung-kanan/edit-bentuk; type LabelMode.
+- store.ts: labelMode ("terpilih" default) + setLabelMode; editBentukId + setEditBentukId (preset sesi edit dari popup); mapClick early-return untuk alat baru; simpanShapeDariPending terima labelTampil.
+- MapCanvas: helper geometri (buatProyeksi meter lokal, titikLingkaran 64 vtx, titikElips, titikBusurSetengah kiri/kanan 48 vtx via normal chord ±90°, titikBezier2 kuadratik, jarakKeRuasPx, dalamPoligonPx, ikonHandle). Render titik & bentuk memakai tooltip permanen class geokita-name-label sesuai labelMode (semua / bertanda / tidak). Efek alat bentuk: klik pusat→radius dengan pratinjau live + tooltip R/ukuran; finalisasi membuka dialog penamaan (pendingShapeSave, alur sama poligon). Efek edit-bentuk: hit-test klik peta & event geokita-edit-bentuk dari klik vektor; handle kotak oranye (seret pindah titik, Alt+klik hapus, min 3 tertutup/2 terbuka), handle bulat biru tengah ruas (seret = ruas diganti kurva Bezier 24 titik, dragend commit ke store & rebuild). Popup titik/bentuk: tombol 🏷 toggle labelTampil + tombol "⬡ Titik" masuk sesi edit bentuk.
+- Toolbar: grup Gambar +5 alat (Circle, Egg, CornerUpLeft/Right, PenTool); grup Label baru (Semua/Tags, Terpilih/Tag, Sembunyi/EyeOff, Tandai — set labelTampil massal dari seleksi Blok).
+- FeatureDialogs: checkbox "Tampilkan label nama … di peta" di dialog titik & bentuk.
+- kml.ts: styleLabel → LabelStyle scale 0 saat label tak tampil (mode sembunyi semua; terpilih hanya yang bertanda); bangunKML terima labelMode; ExportDialog meneruskan useGis.getState().labelMode di 3 titik ekspor KMZ.
+- globals.css: .leaflet-tooltip.geokita-name-label (pill putih 11px, panah disembunyikan).
+- Verifikasi browser end-to-end: mode SEMUA = 27 label (25 titik+2 bentuk), SEMBUNYI = 0, TERPILIH = 0 → Blok 6 fitur → Tandai = 6 label; toggle 🏷 popup lingkaran = 6→7 + toast. Bulatan/Elips/Busur kiri/kanan tersimpan lewat dialog judul (7 path SVG). Edit bentuk: klik garis lurus 2 titik → 2 oranye+1 biru + toast instruksi; seret biru ke atas → 26 oranye (ruas jadi kurva Bezier 24 titik, bbox tinggi 0→33px); seret titik ujung → berpindah; Esc keluar. Uji KML (bun scripts/uji-kml-label.ts): SEMUA 0 off, TERPILIH 2 off, SEMBUNYI 4 off — semua LULUS. Lint bersih, build sukses. Catatan diagnosa: klik uji sempat membentur bentuk lama (popup menutup klik) & peta sempat zoom-out oleh sintetis dblclick — bukan bug aplikasi; posisi live DOM dipakai untuk uji ulang.
+- Rilis: commit main + tag v1.1.0 → CI membangun SIMPLE-CADGIS-Setup-1.1.0.exe; README tabel fitur diperbarui (baris Bentuk & Label).
+
+Stage Summary:
+- Label nama fitur kini terkontrol penuh: 3 mode global + tanda per fitur (popup 🏷 / dialog / Tandai massal), konsisten antara peta & Google Earth (KMZ/KML LabelStyle).
+- Alat gambar lengkap ala CAD: bulatan, elips, busur kiri/kanan (setengah lingkaran), dan edit bentuk yang bisa mengubah garis lurus menjadi lengkung (ala Arc/Fillet AutoCAD).
+- Versi 1.1.0 dirilis: web (Pages) & installer Windows otomatis di Releases.
