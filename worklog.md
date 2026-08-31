@@ -118,3 +118,17 @@ Stage Summary:
 - Header Excel/CSV kini tampil dengan nama kolom asli dari file; user bisa memilih kolom koordinat (gabungan/lat+lng), elevasi, dan judul dari dropdown bernama.
 - Toggle header + deteksi berbasis isi membuat file tanpa header pun tetap bisa diimpor benar.
 - Artefak uji: samples/uji-header-excel.xlsx, samples/uji-tanpa-header.csv, download/uji-header-excel.png, download/uji-header-final.png, download/uji-header-toggle.png.
+
+---
+Task ID: 7
+Agent: Super Z (main agent)
+Task: Perbaikan laporan pengguna "hanya muncul logo Z, tidak bisa masuk ke aplikasi" (kejadian kedua).
+
+Work Log:
+- Diagnosis: dev server Next.js kembali mati (curl 000, tidak ada proses bun/next) — sama seperti Task ID 3, environment/sesi di-restart sehingga proses hilang; kode aplikasi tidak bermasalah.
+- Aksi: menyalakan ulang `bun run dev` (Ready in 847ms, GET / 200).
+- Verifikasi Agent Browser: judul "GeoKita — GIS Web: Peta, Kontur, Cut & Fill, Ekspor SHP/KMZ", panel atas lengkap (impor, tabel, ekspor, gambar, blok data, hapus, ukur, kontur, volume, 3D, layout, basemap, zoom kotak), nol error halaman.
+- Screenshot: download/cek-hidup.png.
+
+Stage Summary:
+- Aplikasi GeoKita kembali normal; semua fitur (termasuk hasil Task ID 4-6) tetap utuh. Tidak ada perubahan kode.
