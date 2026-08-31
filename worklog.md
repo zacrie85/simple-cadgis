@@ -132,3 +132,22 @@ Work Log:
 
 Stage Summary:
 - Aplikasi GeoKita kembali normal; semua fitur (termasuk hasil Task ID 4-6) tetap utuh. Tidak ada perubahan kode.
+
+---
+Task ID: 8
+Agent: Super Z (main agent)
+Task: Fitur baru di menu Layout — box input skala cetak (1:n) yang otomatis meng-zoom peta ke skala yang diisi user (mis. 1:50, 1:350), seperti ArcGIS.
+
+Work Log:
+- Dasar matematis: sheet A4 = 1123 px pada 96 CSS DPI = 297 mm sehingga 1 px = 0,264583 mm (valid di layar & cetak 100%); zoom pecahan = log2(156543.03392 × cos(lat) / (0,264583 × S / 1000)).
+- LayoutView: tambah zoomUntukSkala/skalaDariZoom/parseSkala (terima "1:50", "1/50", "50", "1 / 250", koma desimal), zoomSnap 0 + maxZoom 25, tile maxNativeZoom 19 (upscale digital di atasnya, ala resampling ArcGIS).
+- Panel Layout seksi "Skala cetak (1:n)": input + tombol Terapkan (atau Enter) + auto-apply debounce 700 ms setelah selesai mengetik; preset 1:50/100/250/500/1000/2500/5000; badge OTOMATIS/MANUAL; teks "Skala saat ini: 1:x" + peringatan "citra diperbesar digital"; tombol "Pas otomatis ke seluruh data"; toast sukses/info-upscale/peringatan-zoom-maks.
+- Sub-judul otomatis (checkbox panel): "Skala 1/x • tanggal dd/mm/yyyy" diturunkan langsung dari zoom aktual (derivasi, tanpa setState dalam efek); edit manual sub-judul mematikan otomatis.
+- Mode skala: auto (fitBounds data) vs manual (skala terkunci, fitBounds dilewati); ganti orientasi kertas → invalidateSize + terapkan ulang skala manual / fit ulang data; @page size A4 kini dinamis landscape/portrait via <style> komponen (sebelumnya hardcoded landscape = bug potret saat cetak).
+- Bug ditemukan & diperbaiki: wrapper Panel Layout z-20 kalah dari pane Leaflet (overlay z-400) sehingga klik tombol panel tertutup <path> peta — dinaikkan ke z-[1100] (konvensi FloatingWindow); lint awal error react-hooks/set-state-in-effect pada sinkronisasi sub-judul → diganti derivasi langsung.
+- Verifikasi Agent Browser end-to-end (demo 25 titik + 2 poligon): 1:350 → zoom 20,678, balik-hitung dari zoom = 1:350 persis, sub-judul otomatis "Skala 1/350 • tanggal 31/08/2026"; preset 1:50 → zoom 23,486 + indikator upscale; preset 1:500 → zoom 20,1636 pas; input "abc" → toast "Skala tidak valid"; "750" polos → 1:750; "1 / 250" → 1:250; Pas otomatis → fit data 1/7.406 + badge OTOMATIS; potret↔lanskap → skala terkunci tetap 1:500; screenshot download/uji-skala-layout.png; lint bersih; nol error console/server.
+- Catatan: skala besar (1:50-1:350) di atas zoom tile asli (19) → citra OSM/Esri di-upscale digital (buram); skala tetap AKURAT karena dihitung dari zoom pecahan, bukan dari ketajaman tile.
+
+Stage Summary:
+- Menu Layout kini punya box skala 1:n yang otomatis mengunci zoom peta persis seperti ArcGIS, lengkap preset, badge mode, sub-judul skala otomatis, dan @page dinamis untuk potret.
+- Artefak uji: download/uji-skala-layout.png.

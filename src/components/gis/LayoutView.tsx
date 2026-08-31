@@ -11,6 +11,45 @@ import { toast } from "sonner";
 type Orientasi = "lanskap" | "potret";
 const UKURAN = { lanskap: { w: 1123, h: 794 }, potret: { w: 794, h: 1123 } };
 
+/** 1 px CSS = 0,264583 mm (96 DPI) — dasar perhitungan skala cetak A4. */
+const MM_PER_PX = 25.4 / 96;
+/** Meter per piksel pada zoom 0 Web Mercator (di ekuator). */
+const MPP_Z0 = 156543.03392;
+const ZOOM_MAKS = 25; // di atas ZOOM_TILE_ASLI citra di-upscale digital
+const ZOOM_TILE_ASLI = 19;
+
+const derajatKeRadian = (d: number) => (d * Math.PI) / 180;
+
+/** Zoom pecahan agar 1 px kertas = MM_PER_PX × S mm di lapangan (skala 1:S). */
+function zoomUntukSkala(s: number, lat: number, lebarPx: number): number {
+  const mpp = (MM_PER_PX * s) / 1000; // meter lapangan per piksel kertas
+  return Math.log2((MPP_Z0 * Math.cos(derajatKeRadian(lat))) / mpp);
+}
+
+/** Skala 1:n aktual dari zoom saat ini pada latitude pusat peta. */
+function skalaDariZoom(z: number, lat: number): number {
+  const mpp = (MPP_Z0 * Math.cos(derajatKeRadian(lat))) / Math.pow(2, z);
+  return Math.round((mpp * 1000) / MM_PER_PX);
+}
+
+/** Terima "1:50", "1/50", "50", "1 : 350" → angka pembagi skala. */
+function parseSkala(teks: string): number | null {
+  const b = teks.trim().replace(/,/g, ".").replace(/\s+/g, "");
+  if (!b) return null;
+  const m = b.match(/^1[:/x](\d+(?:\.\d+)?)$/i);
+  if (m) return parseFloat(m[1]);
+  const n = parseFloat(b);
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
+const formatAngka = (n: number) => Math.round(n).toLocaleString("id-ID");
+
+const tanggalKini = () => {
+  const d = new Date();
+  const p = (x: number) => String(x).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+};
+
 /** Editor layout cetak (seperti layout ArcGIS/AutoCAD) + simpan PDF via cetak. */
 export default function LayoutView() {
   const showPanel = useGis((s) => s.dialogs.layoutPanel);
@@ -28,9 +67,18 @@ export default function LayoutView() {
   const [lapisan, setLapisan] = useState({ titik: true, bentuk: true, label: true, kontur: true });
   const [basemapLayout, setBasemapLayout] = useState<"osm" | "sat">(basemap);
   const [mapDiv, setMapDiv] = useState<HTMLDivElement | null>(null);
+  const [modeSkala, setModeSkala] = useState<"auto" | "manual">("auto");
+  const [skalaInput, setSkalaInput] = useState("1:150");
+  const [skalaKini, setSkalaKini] = useState<number | null>(null);
+  const [citraUpscale, setCitraUpscale] = useState(false);
+  const [subJudulOtomatis, setSubJudulOtomatis] = useState(true);
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const modeSkalaRef = useRef<"auto" | "manual">("auto");
+  const lastAppliedRef = useRef<number | null>(null);
+  const pernahKetikRef = useRef(false);
+  const terapkanRef = useRef<(s: number) => void>(() => {});
 
   // ---------- inisialisasi peta layout (menunggu div tersedia) ----------
   useEffect(() => {
@@ -38,17 +86,31 @@ export default function LayoutView() {
     const map = L.map(mapDiv, {
       zoomControl: false,
       attributionControl: false,
-      zoomSnap: 0.25,
+      zoomSnap: 0, // zoom pecahan agar skala cetak tepat
+      zoomDelta: 0.5,
+      maxZoom: ZOOM_MAKS,
     });
     L.control.scale({ imperial: false, position: "bottomright", maxWidth: 120 }).addTo(map);
+    const perbaruiSkala = () => {
+      const c = map.getCenter();
+      setSkalaKini(skalaDariZoom(map.getZoom(), c.lat));
+      setCitraUpscale(map.getZoom() > ZOOM_TILE_ASLI + 0.01);
+    };
+    map.on("zoomend", perbaruiSkala);
+    map.on("moveend", perbaruiSkala);
     mapRef.current = map;
     layerRef.current = L.layerGroup().addTo(map);
-    setTimeout(() => map.invalidateSize(), 100);
+    (window as unknown as Record<string, unknown>).__layoutMap = map;
+    setTimeout(() => {
+      map.invalidateSize();
+      perbaruiSkala();
+    }, 100);
 
     return () => {
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      delete (window as unknown as Record<string, unknown>).__layoutMap;
     };
   }, [view, mapDiv]);
 
@@ -57,15 +119,12 @@ export default function LayoutView() {
     const map = mapRef.current;
     if (view !== "layout" || !mapDiv || !map) return;
     map.eachLayer((l) => {
-      if (l instanceof L.TileLayer || l instanceof L.Control) return;
-      if (l instanceof L.LayerGroup) return;
-      map.removeLayer(l);
+      if (l instanceof L.TileLayer) map.removeLayer(l);
     });
-    // hapus tile lama (identifikasi via tipe TileLayer di atas sudah; tambahan aman):
     const tile =
       basemapLayout === "sat"
-        ? L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 })
-        : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 });
+        ? L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: ZOOM_TILE_ASLI, maxZoom: ZOOM_MAKS })
+        : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxNativeZoom: ZOOM_TILE_ASLI, maxZoom: ZOOM_MAKS });
     tile.addTo(map);
     tile.bringToBack();
   }, [basemapLayout, view, mapDiv]);
@@ -141,9 +200,74 @@ export default function LayoutView() {
       ...points.map((p) => [p.lat, p.lng] as [number, number]),
       ...shapes.flatMap((s) => s.vertices.map((v) => [v.lat, v.lng] as [number, number])),
     ];
-    if (semua.length > 0) map.fitBounds(L.latLngBounds(semua).pad(0.1));
+    if (semua.length > 0 && modeSkalaRef.current === "auto") map.fitBounds(L.latLngBounds(semua).pad(0.1));
     setTimeout(() => map.invalidateSize(), 80);
   }, [points, shapes, labels, contours, lapisan, view, mapDiv]);
+
+  // ---------- terapkan skala cetak (1:n) ----------
+  const terapkanSkala = (s: number) => {
+    const map = mapRef.current;
+    if (!map || !mapDiv || mapDiv.clientWidth <= 0) return;
+    const c = map.getCenter();
+    const zIdeal = zoomUntukSkala(s, c.lat, mapDiv.clientWidth);
+    const z = Math.min(Math.max(zIdeal, 0), ZOOM_MAKS);
+    setModeSkala("manual");
+    modeSkalaRef.current = "manual";
+    lastAppliedRef.current = s;
+    map.setZoom(z);
+    setSkalaKini(skalaDariZoom(z, c.lat));
+    if (zIdeal - z > 0.01) {
+      toast.warning(`Skala 1:${formatAngka(s)} di luar jangkauan`, {
+        description: `Peta dibatasi ke skala ≈ 1:${formatAngka(skalaDariZoom(z, c.lat))} (zoom maksimum).`,
+      });
+    } else if (z > ZOOM_TILE_ASLI) {
+      toast.info(`Skala 1:${formatAngka(s)} diterapkan`, {
+        description: "Citra dasar diperbesar melebihi resolusi aslinya (agak buram), seperti resampling di ArcGIS.",
+      });
+    } else {
+      toast.success(`Skala peta: 1:${formatAngka(s)}`);
+    }
+  };
+
+  useEffect(() => {
+    terapkanRef.current = terapkanSkala;
+  });
+
+  // selesai mengetik skala → otomatis diterapkan (debounce 700 ms)
+  useEffect(() => {
+    if (!pernahKetikRef.current) return;
+    const t = setTimeout(() => {
+      const s = parseSkala(skalaInput);
+      if (s && s !== lastAppliedRef.current) terapkanRef.current(s);
+    }, 700);
+    return () => clearTimeout(t);
+  }, [skalaInput]);
+
+  // ganti orientasi → peta sesuaikan ukuran kertas baru (ulang skala/fit)
+  useEffect(() => {
+    if (view !== "layout" || !mapRef.current) return;
+    const t = setTimeout(() => {
+      const map = mapRef.current;
+      if (!map) return;
+      map.invalidateSize();
+      if (modeSkalaRef.current === "manual" && lastAppliedRef.current) {
+        terapkanRef.current(lastAppliedRef.current);
+      } else {
+        const st = useGis.getState();
+        const semua: [number, number][] = [
+          ...st.points.map((p) => [p.lat, p.lng] as [number, number]),
+          ...st.shapes.flatMap((x) => x.vertices.map((v) => [v.lat, v.lng] as [number, number])),
+        ];
+        if (semua.length > 0) map.fitBounds(L.latLngBounds(semua).pad(0.1));
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [orientasi, view]);
+
+  // sub-judul: saat otomatis diturunkan langsung dari skala & tanggal (tanpa efek)
+  const subJudulTampil = subJudulOtomatis
+    ? `Skala ${skalaKini ? "1/" + formatAngka(skalaKini) : "±"} • tanggal ${tanggalKini()}`
+    : subJudul;
 
   if (view !== "layout") return null;
 
@@ -166,8 +290,29 @@ export default function LayoutView() {
     setTimeout(() => window.print(), 250);
   };
 
+  const pilihPreset = (s: number) => {
+    pernahKetikRef.current = true;
+    setSkalaInput(`1:${s}`);
+    terapkanSkala(s);
+  };
+
+  const pasOtomatis = () => {
+    setModeSkala("auto");
+    modeSkalaRef.current = "auto";
+    lastAppliedRef.current = null;
+    const map = mapRef.current;
+    if (!map) return;
+    const semua: [number, number][] = [
+      ...points.map((p) => [p.lat, p.lng] as [number, number]),
+      ...shapes.flatMap((x) => x.vertices.map((v) => [v.lat, v.lng] as [number, number])),
+    ];
+    if (semua.length > 0) map.fitBounds(L.latLngBounds(semua).pad(0.1));
+    toast.info("Skala otomatis: peta mengikuti seluruh data");
+  };
+
   return (
     <div className="relative flex-1 overflow-auto bg-slate-200 flex items-start justify-center p-6 print:bg-white print:p-0">
+      <style>{`@media print { @page { size: A4 ${orientasi === "lanskap" ? "landscape" : "portrait"}; } }`}</style>
       <div
         className="layout-sheet relative bg-white shadow-2xl border border-slate-300 print:border-0 print:shadow-none"
         style={{ width: ukuran.w, height: ukuran.h, transformOrigin: "top center" }}
@@ -184,8 +329,11 @@ export default function LayoutView() {
             className="w-full text-center text-xl font-extrabold tracking-wide bg-transparent outline-none focus:bg-blue-50 rounded pointer-events-auto"
           />
           <input
-            value={subJudul}
-            onChange={(e) => setSubJudul(e.target.value)}
+            value={subJudulTampil}
+            onChange={(e) => {
+              setSubJudul(e.target.value);
+              setSubJudulOtomatis(false);
+            }}
             aria-label="Sub-judul peta"
             className="w-full text-center text-xs text-slate-500 bg-transparent outline-none focus:bg-blue-50 rounded mt-0.5 pointer-events-auto"
           />
@@ -225,7 +373,7 @@ export default function LayoutView() {
 
       {/* Panel pengaturan layout (jendela mengambang) */}
       {showPanel && (
-        <div className="absolute right-4 top-4 z-20 print:hidden">
+        <div className="absolute right-4 top-4 z-[1100] print:hidden">
           <FloatingWindow judul="Panel Layout" onClose={() => setDialog("layoutPanel", false)} lebar="!w-64 !max-w-none">
             <div className="space-y-3.5 text-sm">
               <div>
@@ -265,6 +413,71 @@ export default function LayoutView() {
               </div>
 
               <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-slate-500">Skala cetak (1 : n)</p>
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                      modeSkala === "manual" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {modeSkala === "manual" ? "MANUAL" : "OTOMATIS"}
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    value={skalaInput}
+                    onChange={(e) => {
+                      pernahKetikRef.current = true;
+                      setSkalaInput(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const s = parseSkala(skalaInput);
+                        if (s) terapkanSkala(s);
+                      }
+                    }}
+                    placeholder="1:50"
+                    aria-label="Skala cetak, contoh 1:50"
+                    inputMode="numeric"
+                    className="flex-1 min-w-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => {
+                      const s = parseSkala(skalaInput);
+                      if (s) terapkanSkala(s);
+                      else toast.error("Skala tidak valid", { description: "Isi dengan angka, contoh: 1:50 atau 350" });
+                    }}
+                    className="rounded-lg bg-blue-600 text-white px-2.5 py-1.5 text-xs font-semibold hover:bg-blue-700"
+                  >
+                    Terapkan
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {[50, 100, 250, 500, 1000, 2500, 5000].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => pilihPreset(s)}
+                      className="rounded-md bg-slate-100 hover:bg-blue-100 text-[10px] px-1.5 py-0.5 text-slate-600"
+                    >
+                      1:{s}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1.5">
+                  Skala saat ini: <b>1:{skalaKini ? formatAngka(skalaKini) : "—"}</b>
+                  {citraUpscale && <span className="text-amber-600"> • citra diperbesar digital</span>}
+                </p>
+                {modeSkala === "manual" && (
+                  <button
+                    onClick={pasOtomatis}
+                    className="mt-1.5 w-full rounded-lg bg-slate-100 hover:bg-slate-200 py-1 text-[10px] font-medium text-slate-600"
+                  >
+                    Pas otomatis ke seluruh data
+                  </button>
+                )}
+              </div>
+
+              <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1.5">Data yang ditampilkan</p>
                 <div className="space-y-1.5">
                   {(
@@ -287,6 +500,15 @@ export default function LayoutView() {
                 </div>
               </div>
 
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={subJudulOtomatis}
+                  onChange={(e) => setSubJudulOtomatis(e.target.checked)}
+                />
+                Sub-judul otomatis (skala &amp; tanggal)
+              </label>
+
               <div className="pt-1 space-y-1.5">
                 <button
                   onClick={cetak}
@@ -301,7 +523,11 @@ export default function LayoutView() {
                 </p>
                 <p className="text-[10px] text-slate-400 flex items-start gap-1">
                   <RotateCcw className="h-3 w-3 shrink-0 mt-0.5" />
-                  Peta layout mengikuti seluruh rentang data secara otomatis.
+                  Mode Otomatis: peta mengikuti seluruh data. Isi skala (mis. 1:50) untuk mengunci zoom persis seperti ArcGIS.
+                </p>
+                <p className="text-[10px] text-slate-400 flex items-start gap-1">
+                  <Printer className="h-3 w-3 shrink-0 mt-0.5" />
+                  Saat mencetak, pilih skala kertas 100% (Actual size) agar skala peta tepat.
                 </p>
               </div>
             </div>
