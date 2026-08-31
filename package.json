@@ -14,6 +14,28 @@
     "dist:win": "electron-builder --win nsis"
   },
   "trustedDependencies": ["electron"],
+  "build": {
+    "appId": "com.zacrie.simplecadgis",
+    "productName": "SIMPLE CADGIS",
+    "copyright": "© 2026 zacrie85 — SIMPLE CADGIS",
+    "directories": {
+      "output": "dist-desktop",
+      "buildResources": "electron"
+    },
+    "files": ["electron/main.cjs", "electron/icon.png", "out/**/*"],
+    "win": {
+      "icon": "electron/icon.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "shortcutName": "SIMPLE CADGIS",
+      "artifactName": "SIMPLE-CADGIS-Setup-${version}.${ext}"
+    }
+  },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
