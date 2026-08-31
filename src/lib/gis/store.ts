@@ -6,6 +6,7 @@ import type {
   GisLabel,
   GisPoint,
   GisShape,
+  LabelMode,
   LatLng,
   ToolMode,
 } from "./types";
@@ -31,6 +32,7 @@ interface GisStore {
   view: ViewMode;
   basemap: Basemap;
   tool: ToolMode;
+  labelMode: LabelMode;
   pendingVertices: LatLng[];
   pendingShapeSave: { kind: "closed" | "open"; vertices: LatLng[] } | null;
   measurePoints: LatLng[];
@@ -41,6 +43,7 @@ interface GisStore {
   contours: ContourLayer[];
   selection: string[];
   tableShapeFilter: string | null;
+  editBentukId: string | null; // bentuk yang langsung diedit saat alat edit-bentuk aktif
   dialogs: DialogState;
   flyNonce: number;
   flyTarget: LatLng & { zoom?: number };
@@ -49,6 +52,7 @@ interface GisStore {
   setView: (v: ViewMode) => void;
   setBasemap: (b: Basemap) => void;
   setTool: (t: ToolMode) => void;
+  setLabelMode: (m: LabelMode) => void;
   mapClick: (lat: number, lng: number) => void;
   finishDraw: () => void;
   cancelDraw: () => void;
@@ -75,6 +79,7 @@ interface GisStore {
   setSelection: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
+  setEditBentukId: (id: string | null) => void;
   deleteSelected: () => { titik: number; bentuk: number };
 
   setDialog: <K extends keyof DialogState>(key: K, value: DialogState[K]) => void;
@@ -100,6 +105,7 @@ export const useGis = create<GisStore>((set, get) => ({
   view: "map",
   basemap: "osm",
   tool: null,
+  labelMode: "terpilih",
   pendingVertices: [],
   pendingShapeSave: null,
   measurePoints: [],
@@ -110,6 +116,7 @@ export const useGis = create<GisStore>((set, get) => ({
   contours: [],
   selection: [],
   tableShapeFilter: null,
+  editBentukId: null,
   dialogs: { ...DIALOG_AWAL },
   flyNonce: 0,
   flyTarget: { lat: -6.994292, lng: 110.4294, zoom: 13 },
@@ -117,6 +124,7 @@ export const useGis = create<GisStore>((set, get) => ({
 
   setView: (v) => set({ view: v }),
   setBasemap: (b) => set({ basemap: b }),
+  setLabelMode: (m) => set({ labelMode: m }),
 
   setTool: (t) =>
     set({ tool: t, pendingVertices: [], measurePoints: [], measureTotal: 0 }),
@@ -150,6 +158,8 @@ export const useGis = create<GisStore>((set, get) => ({
     }
     // alat blok & zoom kotak ditangani interaksi drag di MapCanvas, bukan klik
     if (tool === "select" || tool === "zoombox") return;
+    // alat bentuk khusus (bulatan/elips/lengkung/edit) ditangani listener MapCanvas
+    if (tool === "bulatan" || tool === "elips" || tool === "lengkung-kiri" || tool === "lengkung-kanan" || tool === "edit-bentuk") return;
     // tanpa alat: klik area kosong → bersihkan seleksi
     set({ selection: [] });
   },
@@ -237,6 +247,7 @@ export const useGis = create<GisStore>((set, get) => ({
         : [...st.selection, id],
     })),
   clearSelection: () => set({ selection: [] }),
+  setEditBentukId: (id) => set({ editBentukId: id }),
 
   deleteSelected: () => {
     const s = get();
@@ -284,7 +295,14 @@ export function ambilPendingShape(): { kind: "closed" | "open"; vertices: LatLng
 }
 
 /** Simpan hasil gambar menjadi shape sungguhan (dipanggil setelah dialog judul). */
-export function simpanShapeDariPending(kind: "closed" | "open", vertices: LatLng[], title: string, description: string, color: string) {
+export function simpanShapeDariPending(
+  kind: "closed" | "open",
+  vertices: LatLng[],
+  title: string,
+  description: string,
+  color: string,
+  labelTampil = false
+) {
   const shape: GisShape = {
     id: uid("shape"),
     kind,
@@ -295,6 +313,7 @@ export function simpanShapeDariPending(kind: "closed" | "open", vertices: LatLng
     attrs: {},
     source: "manual",
     visible: true,
+    labelTampil,
   };
   useGis.getState().addShape(shape);
   return shape;

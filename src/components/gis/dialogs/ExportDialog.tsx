@@ -8,6 +8,7 @@ import { excelZip, excelTabel } from "@/lib/gis/excelExport";
 import { unduhBlob, stempelWaktu } from "@/lib/gis/download";
 import { titikDalamPoligon } from "@/lib/gis/geo";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
+// labelMode dibaca imperatif saat ekspor (bukan selector) agar nilai selalu terkini
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -61,7 +62,7 @@ export default function ExportDialog() {
           return;
         }
         if (format === "kmz") {
-          const kml = bangunKML({ points: pilih, namaDokumen: "Ekspor Titik SIMPLE CADGIS" });
+          const kml = bangunKML({ points: pilih, namaDokumen: "Ekspor Titik SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
           unduhBlob(kmlKeKmz(kml, "titik"), `SIMPLE-CADGIS-Titik-${ts}.kmz`, "application/vnd.google-earth.kmz");
         } else if (format === "xlsx") {
           await excelZip({ points: pilih }, `SIMPLE-CADGIS-Titik-${ts}.xlsx`);
@@ -81,7 +82,7 @@ export default function ExportDialog() {
           return;
         }
         if (format === "kmz") {
-          const kml = bangunKML({ shapes: bentuk, namaDokumen: "Ekspor Poligon SIMPLE CADGIS" });
+          const kml = bangunKML({ shapes: bentuk, namaDokumen: "Ekspor Poligon SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
           unduhBlob(kmlKeKmz(kml, "bentuk"), `SIMPLE-CADGIS-Poligon-${ts}.kmz`, "application/vnd.google-earth.kmz");
         } else if (format === "xlsx") {
           await excelZip({ shapes: bentuk }, `SIMPLE-CADGIS-Poligon-${ts}.xlsx`);
@@ -105,7 +106,7 @@ export default function ExportDialog() {
         await excelTabel(header, baris, `SIMPLE-CADGIS-Tabel-${ts}.xlsx`, "Atribut");
         toast.success("Tabel diekspor ke Excel");
       } else if (format === "kmz") {
-        const kml = bangunKML({ points: pilih, shapes: bentuk, contours, namaDokumen: "Ekspor Tabel SIMPLE CADGIS" });
+        const kml = bangunKML({ points: pilih, shapes: bentuk, contours, namaDokumen: "Ekspor Tabel SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
         if (format === "kmz" && kmlString(kml).length === 0) throw new Error("Kosong");
         unduhBlob(kmlKeKmz(kml, "tabel"), `SIMPLE-CADGIS-Tabel-${ts}.kmz`, "application/vnd.google-earth.kmz");
         toast.success("Tabel diekspor ke KMZ");

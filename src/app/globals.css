@@ -195,6 +195,22 @@
   display: none;
 }
 
+/* Label nama titik/poligon/garis (mode label: semua / terpilih) */
+.leaflet-tooltip.geokita-name-label {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.leaflet-tooltip.geokita-name-label::before {
+  display: none;
+}
+
 /* ============ Cetak layout ============ */
 @media print {
   body {

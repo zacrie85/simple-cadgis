@@ -1,5 +1,5 @@
 import { zipSync, strToU8 } from "fflate";
-import type { ContourLayer, GisPoint, GisShape } from "./types";
+import type { ContourLayer, GisPoint, GisShape, LabelMode } from "./types";
 
 function escXml(s: string): string {
   return s
@@ -19,7 +19,18 @@ function extendedData(attrs: Record<string, string>, extra: Record<string, strin
   return `    <ExtendedData>\n${items}\n    </ExtendedData>\n`;
 }
 
-function pointPlacemark(p: GisPoint): string {
+/**
+ * Style KML untuk mengatur label nama di Google Earth sesuai mode label aplikasi:
+ * - "semua"    : label tampil (tanpa style khusus)
+ * - "terpilih": hanya fitur bertanda labelTampil yang labelnya tampil
+ * - "sembunyi": semua label disembunyikan (LabelStyle scale 0)
+ */
+function styleLabel(mode: LabelMode, tanda?: boolean): string {
+  const tampil = mode === "semua" || (mode === "terpilih" && !!tanda);
+  return tampil ? "" : "    <Style><LabelStyle><scale>0</scale></LabelStyle></Style>\n";
+}
+
+function pointPlacemark(p: GisPoint, labelMode: LabelMode): string {
   const desc = [
     p.description,
     p.elevation != null ? `Ketinggian: ${p.elevation} m` : "",
@@ -29,7 +40,7 @@ function pointPlacemark(p: GisPoint): string {
     .join("<br/>");
   return `  <Placemark>
     <name>${escXml(p.title || "Titik")}</name>
-    <description><![CDATA[${desc}]]></description>
+${styleLabel(labelMode, p.labelTampil)}    <description><![CDATA[${desc}]]></description>
 ${extendedData(p.attrs, {
   Keterangan: p.description,
   Ketinggian: p.elevation != null ? String(p.elevation) : "",
@@ -39,7 +50,7 @@ ${extendedData(p.attrs, {
   </Placemark>\n`;
 }
 
-function shapePlacemark(s: GisShape): string {
+function shapePlacemark(s: GisShape, labelMode: LabelMode): string {
   const coordStr = s.vertices.map((v) => `${v.lng},${v.lat},0`).join(" ");
   const geom =
     s.kind === "open"
@@ -47,7 +58,7 @@ function shapePlacemark(s: GisShape): string {
       : `    <Polygon><outerBoundaryIs><LinearRing><coordinates>${coordStr} ${s.vertices[0].lng},${s.vertices[0].lat},0</coordinates></LinearRing></outerBoundaryIs></Polygon>\n`;
   return `  <Placemark>
     <name>${escXml(s.title)}</name>
-    <description><![CDATA[${s.description ?? ""}]]></description>
+${styleLabel(labelMode, s.labelTampil)}    <description><![CDATA[${s.description ?? ""}]]></description>
 ${extendedData(s.attrs, { Keterangan: s.description ?? "", Jenis: s.kind === "closed" ? "Poligon" : "Garis" })}${geom}  </Placemark>\n`;
 }
 
@@ -65,19 +76,21 @@ export function bangunKML(opts: {
   shapes?: GisShape[];
   contours?: ContourLayer[];
   namaDokumen?: string;
+  labelMode?: LabelMode;
 }): string {
   const points = opts.points ?? [];
   const shapes = opts.shapes ?? [];
   const contours = opts.contours ?? [];
+  const labelMode = opts.labelMode ?? "semua";
   let body = "";
   if (points.length) {
     body += "  <Folder><name>Titik</name>\n";
-    body += points.map(pointPlacemark).join("");
+    body += points.map((p) => pointPlacemark(p, labelMode)).join("");
     body += "  </Folder>\n";
   }
   if (shapes.length) {
     body += "  <Folder><name>Poligon & Garis</name>\n";
-    body += shapes.map(shapePlacemark).join("");
+    body += shapes.map((sh) => shapePlacemark(sh, labelMode)).join("");
     body += "  </Folder>\n";
   }
   if (contours.length) {

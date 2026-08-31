@@ -11,6 +11,7 @@ Aplikasi pemetaan **100% client-side** dengan seluruh tombol di **satu panel ata
 | **Impor** | Excel (.xlsx), CSV, KML, KMZ hingga **250 MB** — diproses **streaming per-chunk di Web Worker** dengan progress bar sehingga aplikasi tidak hang. Pilih kolom koordinat manual (mendukung format `(-6.994292,110.429400)` dalam 1 kolom, atau kolom lat/lng terpisah) + kolom elevasi opsional. |
 | **Tabel** | Tabel atribut ala ArcGIS: cari, pilih (centang), edit, hapus, filter *"titik di dalam poligon"*, dan lompat ke titik. |
 | **Titik** | Klik peta → isi **judul, deskripsi, foto**, dan elevasi. Klik titik di peta → popup lengkap + tombol **Edit**. |
+| **Bentuk** | Poligon **tertutup**, garis terbuka, **Bulatan**, **Elips**, dan **Lengkung kiri/kanan** (busur setengah lingkaran). **Edit Bentuk ala AutoCAD**: seret titik untuk memindahkan, seret bulat biru di tengah ruas untuk **melengkungkan garis lurus**, Alt+klik hapus titik. |
 | **Poligon / Garis** | Gambar poligon **tertutup** atau **terbuka** dengan tombol **Selesai** (tertutup: titik akhir otomatis menyambung ke titik pertama; terbuka: tidak). |
 | **Teks** | Label teks di atas titik/poligon/area kosong — bisa diedit dengan klik. |
 | **Ukur** | Jarak 2 titik atau **multi-titik** (tiap segmen + total, satuan m/km). |
@@ -19,6 +20,7 @@ Aplikasi pemetaan **100% client-side** dengan seluruh tombol di **satu panel ata
 | **Volume** | **Cut & Fill** dan **Overburden** (m³) di dalam poligon vs elevasi rencana/seam — hasil bisa disimpan ke deskripsi poligon. |
 | **Ekspor** | Titik / Polygon-Garis / Tabel → **KMZ, Excel, SHP (.zip berisi .shp+.shx+.dbf+.prj)** — pilih *semua* atau *terpilih saja*. |
 | **Layout** | Editor layout cetak ala ArcGIS: judul, bingkai, panah utara (4 gaya), skala cetak 1:n, basemap OSM/Satelit/Putih, **legenda** (ukuran manual + tulisan kustom sendiri), **foto** di dalam layout, orientasi A4 lanskap/potret → **Cetak / Simpan PDF**. |
+| **Label** | Mode tampil nama titik/poligon/garis: **Semua / Terpilih / Sembunyi**. Tandai per fitur lewat tombol 🏷 di popup, centang di dialog edit, atau blok lalu **Tandai**. Mode label ikut ke **Google Earth** saat ekspor KMZ/KML (LabelStyle). |
 | **Peta** | Basemap **OpenStreetMap ↔ Satelit (Esri World Imagery)** bergantian satu klik. |
 | **Demo** | Tombol *Demo* memuat 25 titik elevasi + poligon contoh untuk langsung mencoba Kontur, 3D, dan Volume. |
 
@@ -48,7 +50,7 @@ npx serve out    # tes hasil build secara lokal
 ## 💻 Install di PC — Installer Windows (.exe)
 
 1. Buka halaman **Releases** repo ini (kanan → *Releases*).
-2. Download **SIMPLE-CADGIS-Setup-1.0.0.exe**.
+2. Download **SIMPLE-CADGIS-Setup-1.1.0.exe**.
 3. Jalankan → pilih folder tujuan → **Next**. Shortcut **SIMPLE CADGIS** otomatis muncul di desktop.
 
 > Installer dibangun otomatis oleh GitHub Actions setiap ada tag baru (mis. `v1.0.0`) — lihat `.github/workflows/build-desktop.yml`. Membangun sendiri secara lokal: `bun install && bun run build && bun run dist:win`.

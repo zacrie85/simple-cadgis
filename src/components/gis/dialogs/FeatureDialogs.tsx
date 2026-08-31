@@ -61,6 +61,7 @@ function PointForm({
   const [description, setDescription] = useState(awal?.description ?? "");
   const [elevation, setElevation] = useState(awal?.elevation != null ? String(awal.elevation) : "");
   const [photo, setPhoto] = useState<string | undefined>(awal?.photo);
+  const [labelTampil, setLabelTampil] = useState(awal?.labelTampil ?? false);
   const [loadingFoto, setLoadingFoto] = useState(false);
 
   const simpan = () => {
@@ -78,6 +79,7 @@ function PointForm({
         attrs: {},
         source: "manual",
         visible: true,
+        labelTampil,
       });
       toast.success("Titik ditambahkan", { description: title.trim() || "Titik baru" });
     } else {
@@ -86,6 +88,7 @@ function PointForm({
         description: description.trim(),
         elevation: elev != null && !isNaN(elev) ? elev : null,
         photo,
+        labelTampil,
       });
       toast.success("Titik diperbarui");
     }
@@ -121,6 +124,17 @@ function PointForm({
             <Label htmlFor="pt-elev">Ketinggian / elevasi (m) — untuk kontur &amp; volume</Label>
             <Input id="pt-elev" type="number" step="0.01" className="rounded-xl" value={elevation} onChange={(e) => setElevation(e.target.value)} placeholder="Misal: 325.5" />
           </div>
+          <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-blue-600"
+              checked={labelTampil}
+              onChange={(e) => setLabelTampil(e.target.checked)}
+            />
+            <span className="text-sm text-slate-700">
+              Tampilkan label nama titik ini di peta <span className="text-xs text-slate-400">(mode label "Terpilih")</span>
+            </span>
+          </label>
           <div className="space-y-1.5">
             <Label>Foto</Label>
             {photo ? (
@@ -310,6 +324,7 @@ function ShapeForm({
   const [title, setTitle] = useState(sh?.title ?? "");
   const [description, setDescription] = useState(sh?.description ?? "");
   const [color, setColor] = useState(sh?.color ?? WARNA[0]);
+  const [labelTampil, setLabelTampil] = useState(sh?.labelTampil ?? false);
 
   const simpan = () => {
     const st = useGis.getState();
@@ -319,12 +334,12 @@ function ShapeForm({
         tutup();
         return;
       }
-      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color);
+      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil);
       toast.success(pending.kind === "closed" ? "Poligon tersimpan" : "Garis tersimpan", {
         description: title.trim() || undefined,
       });
     } else {
-      st.updateShape(state.id, { title: title.trim() || "Tanpa Judul", description: description.trim(), color });
+      st.updateShape(state.id, { title: title.trim() || "Tanpa Judul", description: description.trim(), color, labelTampil });
       toast.success("Perubahan disimpan");
     }
     tutup();
@@ -363,6 +378,17 @@ function ShapeForm({
               ))}
             </div>
           </div>
+          <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-blue-600"
+              checked={labelTampil}
+              onChange={(e) => setLabelTampil(e.target.checked)}
+            />
+            <span className="text-sm text-slate-700">
+              Tampilkan label nama bentuk ini di peta <span className="text-xs text-slate-400">(mode label "Terpilih")</span>
+            </span>
+          </label>
         </div>
         <DialogFooter className="gap-2">
           {!baru && sh && (

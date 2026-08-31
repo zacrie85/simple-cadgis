@@ -24,6 +24,14 @@ import {
   BoxSelect,
   Trash2,
   Crop,
+  Circle,
+  Egg,
+  CornerUpLeft,
+  CornerUpRight,
+  PenTool,
+  Tags,
+  Tag,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -71,6 +79,31 @@ export default function Toolbar() {
     });
   };
 
+  /** Tandai semua fitur terpilih agar labelnya tampil pada mode "Terpilih". */
+  const tandaiLabelTerpilih = () => {
+    const ids = new Set(s.selection);
+    let n = 0;
+    s.points.forEach((p) => {
+      if (ids.has(p.id) && !p.labelTampil) {
+        s.updatePoint(p.id, { labelTampil: true });
+        n++;
+      }
+    });
+    s.shapes.forEach((sh) => {
+      if (ids.has(sh.id) && !sh.labelTampil) {
+        s.updateShape(sh.id, { labelTampil: true });
+        n++;
+      }
+    });
+    if (n === 0) {
+      toast.info("Tidak ada fitur baru yang ditandai", { description: "Semua fitur terpilih sudah bertanda label." });
+      return;
+    }
+    toast.success(`${n} fitur ditandai 🏷`, {
+      description: 'Aktifkan mode label "Terpilih" (grup Label) agar hanya yang bertanda yang tampil.',
+    });
+  };
+
   const grups: Grup[] = [
     {
       nama: "Berkas",
@@ -87,6 +120,11 @@ export default function Toolbar() {
         { label: "Poligon", icon: Hexagon, title: "Poligon tertutup (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-closed"), active: s.tool === "poly-closed" },
         { label: "Garis", icon: Minus, title: "Poligon/garis terbuka (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-open"), active: s.tool === "poly-open" },
         { label: "Teks", icon: Type, title: "Tambah label teks (klik peta)", onClick: () => setTool("text"), active: s.tool === "text" },
+        { label: "Bulatan", icon: Circle, title: "Buat lingkaran — klik pusat, lalu klik radius", onClick: () => setTool("bulatan"), active: s.tool === "bulatan" },
+        { label: "Elips", icon: Egg, title: "Buat elips — klik pusat, lalu klik jangkauan (kanan-atas)", onClick: () => setTool("elips"), active: s.tool === "elips" },
+        { label: "Lengkung ←", icon: CornerUpLeft, title: "Busur belok KIRI (setengah lingkaran) — klik awal, lalu klik akhir", onClick: () => setTool("lengkung-kiri"), active: s.tool === "lengkung-kiri" },
+        { label: "Lengkung →", icon: CornerUpRight, title: "Busur belok KANAN (setengah lingkaran) — klik awal, lalu klik akhir", onClick: () => setTool("lengkung-kanan"), active: s.tool === "lengkung-kanan" },
+        { label: "Edit Bentuk", icon: PenTool, title: "Edit bentuk ala AutoCAD — klik garis/poligon: seret titik, lengkungkan ruas lurus", onClick: () => setTool("edit-bentuk"), active: s.tool === "edit-bentuk" },
       ],
     },
     {
@@ -133,6 +171,21 @@ export default function Toolbar() {
       items: [
         { label: "OSM", icon: Globe, title: "Basemap OpenStreetMap", onClick: () => s.setBasemap("osm"), active: s.basemap === "osm" },
         { label: "Satelit", icon: Satellite, title: "Basemap citra satelit", onClick: () => s.setBasemap("sat"), active: s.basemap === "sat" },
+      ],
+    },
+    {
+      nama: "Label",
+      items: [
+        { label: "Semua", icon: Tags, title: "Label nama DITAMPILKAN untuk semua titik & poligon/garis", onClick: () => s.setLabelMode("semua"), active: s.labelMode === "semua" },
+        { label: "Terpilih", icon: Tag, title: 'Label hanya untuk fitur yang DITANDAI (tombol 🏷 di popup / "Tandai" di bawah / centang di dialog edit)', onClick: () => s.setLabelMode("terpilih"), active: s.labelMode === "terpilih" },
+        { label: "Sembunyi", icon: EyeOff, title: "Semua label nama DISEMBUNYIKAN", onClick: () => s.setLabelMode("sembunyi"), active: s.labelMode === "sembunyi" },
+        {
+          label: jumlahTerpilih > 0 ? `Tandai (${jumlahTerpilih})` : "Tandai",
+          icon: Tag,
+          title: "Tandai semua fitur terpilih (hasil Blok) agar labelnya tampil pada mode Terpilih",
+          onClick: tandaiLabelTerpilih,
+          disabled: jumlahTerpilih === 0,
+        },
       ],
     },
     {

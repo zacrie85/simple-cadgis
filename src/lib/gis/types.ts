@@ -16,6 +16,7 @@ export interface GisPoint {
   attrs: Record<string, string>; // atribut tambahan dari impor
   source: "manual" | "excel" | "csv" | "kml";
   visible: boolean;
+  labelTampil?: boolean; // tanda: label nama titik ini tampil pada mode "terpilih"
 }
 
 export interface GisShape {
@@ -28,6 +29,7 @@ export interface GisShape {
   attrs: Record<string, string>;
   source: "manual" | "kml";
   visible: boolean;
+  labelTampil?: boolean; // tanda: label nama bentuk ini tampil pada mode "terpilih"
 }
 
 export interface GisLabel {
@@ -59,7 +61,15 @@ export type ToolMode =
   | "text"
   | "measure"
   | "select" // blok data dengan drag kotak
-  | "zoombox"; // zoom ke area dengan drag kotak
+  | "zoombox" // zoom ke area dengan drag kotak
+  | "bulatan" // lingkaran: klik pusat + klik radius
+  | "elips" // elips: klik pusat + klik jangkauan
+  | "lengkung-kiri" // busur setengah lingkaran belok kiri: klik awal + klik akhir
+  | "lengkung-kanan" // busur setengah lingkaran belok kanan: klik awal + klik akhir
+  | "edit-bentuk"; // edit titik bentuk + lengkungkan ruas lurus (ala Arc/Fillet AutoCAD)
+
+/** Mode tampil label nama fitur di peta (dan ikut ke KMZ/KML). */
+export type LabelMode = "semua" | "terpilih" | "sembunyi";
 
 export type FeatureType = "point" | "shape";
 
