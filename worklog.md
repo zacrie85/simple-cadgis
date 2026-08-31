@@ -223,3 +223,17 @@ Stage Summary:
 - Legenda bisa diperbesar/diperkecil manual: 3 preset atau seret titik biru di pojok kotak (0.5-3x, pusat terkunci).
 - User bisa menulis item legenda sendiri (teks + bentuk simbol garis/kotak/bulat/teks + warna), dikelola dari panel (tambah/hapus), digabung rapi setelah item otomatis.
 - Artefak uji: download/uji-basemap-putih.png, download/uji-layout-putih-legenda.png.
+
+---
+Task ID: 13
+Agent: Super Z (main agent)
+Task: Perbaikan laporan user "aplikasi hanya menampilkan logo huruf z" — server dev mati.
+
+Work Log:
+- Diagnosa: curl ke localhost:3000 gagal (exit 7 / kode 000) — proses `next dev` tidak berjalan, sehingga halaman preview hanya memuat splash logo Z tanpa pernah mendapat respons dari app. Bukan bug kode.
+- Restart dev server: `bun run dev` (nohup background) → Next.js 16.1.3 Ready in 811ms, GET / 200, tanpa error kompilasi.
+- Verifikasi agent-browser: halaman utama memuat penuh (semua toolbar GeoKita tampil), nol error console/server; buka Editor layout → seksi Basemap layout (dengan opsi Putih), Legenda peta, dan Foto di layout semuanya ada — fitur Task 12 utuh setelah restart.
+- Screenshot: download/uji-restart-server.png.
+
+Stage Summary:
+- Akar masalah murni infrastruktur: dev server berhenti (kemungkinan karena sesi sebelumnya berakhir), bukan regresi kode. Server kembali berjalan di localhost:3000 dan seluruh fitur (termasuk 3 upgrade Task 12) terverifikasi normal.
