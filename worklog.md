@@ -258,3 +258,19 @@ Work Log:
 Stage Summary:
 - Aplikasi resmi bernama SIMPLE CADGIS v1.0.0, siap-push ke github.com/zacrie85, dan punya jalur installer Windows otomatis: push tag v* → GitHub Actions membangun SIMPLE-CADGIS-Setup-1.0.0.exe → muncul di Releases untuk diunduh & dipasang di PC.
 - Alternatif install: PWA via GitHub Pages (workflow deploy.yml sudah diperbaiki).
+
+---
+Task ID: 14b
+Agent: Super Z (main agent)
+Task: Eksekusi push ke GitHub + rilis installer SIMPLE CADGIS (lanjutan Task 14, dengan PAT dari user).
+
+Work Log:
+- Repo github.com/zacrie85/simple-cadgis dibuat via API (public), GitHub Pages diaktifkan (build_type: workflow).
+- Push main + tag v1.0.0. Dua kegagalan CI diperbaiki bertahap:
+  1) "Set up job" gagal: softprops/action-ghrelease tak ter-resolve di runner → diganti `gh release create` bawaan runner (gh CLI + GITHUB_TOKEN).
+  2) electron-builder selesai tapi output ke dist\ dan icon default — electron-builder.config.js TIDAK dibaca otomatis v26 → konfigurasi dipindah ke key "build" di package.json (appId, productName SIMPLE CADGIS, output dist-desktop, win NSIS x64, icon electron/icon.png, artifactName SIMPLE-CADGIS-Setup-${version}.exe, oneClick false + pilih folder + shortcut desktop). electron-builder.config.js dihapus.
+- Hasil akhir: run CI sukses; Release v1.0.0 berisi SIMPLE-CADGIS-Setup-1.0.0.exe (182,4 MB) https://github.com/zacrie85/simple-cadgis/releases/download/v1.0.0/SIMPLE-CADGIS-Setup-1.0.0.exe; GitHub Pages 200 OK di https://zacrie85.github.io/simple-cadgis/ (PWA bisa di-install dari Chrome/Edge); repo 200 OK.
+- Token user TIDAK disimpan ke file/repo manapun; remote git bersih.
+
+Stage Summary:
+- SIMPLE CADGIS v1.0.0 live di GitHub: kode ter-push, PWA online (Pages), installer Windows siap diunduh dari Releases. Ke depan: setiap push tag vX.Y.Z otomatis membangun installer baru; setiap push ke main otomatis deploy Pages.
