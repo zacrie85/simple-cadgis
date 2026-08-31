@@ -61,3 +61,23 @@ Work Log:
 Stage Summary:
 - Aplikasi GeoKita kembali normal & terverifikasi; screenshot: download/cek-geokita.png.
 - Tidak ada perubahan kode; cukup restart server.
+
+---
+Task ID: 4
+Agent: Super Z (main agent)
+Task: Perbaikan popup KMZ/KML berantakan (deskripsi berisi HTML mentah) + bug popup poligon tidak bisa dibuka.
+
+Work Log:
+- Diagnosis: deskripsi <description> pada KMZ pengguna berisi dokumen HTML utuh (gaya export Google My Maps/sistem telco: header biru + pasangan label-nilai bergaya font-size 10px + uppercase) sehingga popup menampilkan kode mentah.
+- Solusi baru src/lib/gis/htmlDesc.ts: bersihkanDeskripsiHtml() — DOMParser di thread utama; ekstrak pasangan label->nilai dari 3 pola (baris tabel 2 sel, dt/dd, pasangan div/span berurutan dengan label kecil/uppercase); buang duplikat judul pada ringkasan; gabung ke atribut (ExtendedData tetap menang); fallback strip-tag bila parse gagal.
+- Terapkan di ImportDialog onFeatures untuk titik & bentuk; perbaiki decodeXml worker (entitas hex &#x...; + String.fromCodePoint utk emoji/surrogate).
+- Popup MapCanvas: deskripsi whitespace-pre-line + max-height scroll; atribut 14 entri dalam kontainer scrollable; lebar popup 360px.
+- Bug asli ditemukan saat pengujian: bukaPopupBentuk mengakses mapRef di luar komponen -> ReferenceError tiap klik poligon/garis (popup bentuk tak pernah bisa terbuka). Diperbaiki: map dikirim sebagai parameter.
+- File uji dibuat via scripts/buat-kmz-uji.py (samples/uji-popup-odp.kmz, 2 titik ODP berdeskripsi HTML + 1 poligon teks polos). Kesalahan awal generator uji (lupa tag </coordinates>) berhasil dilacak dengan scripts/uji-parser.mjs & debug-regex*.mjs lalu diperbaiki.
+- Verifikasi Agent Browser end-to-end: impor KMZ -> toast "2 titik + 1 poligon/garis"; popup ODP 103 rapi (judul, alamat bersih, atribut Provider=OMG, Location Region, Req. Install Date/Time, Address Note, Segment); popup poligon "Area Kerja A" kini terbuka; tabel data menampilkan atribut terestraksi sebagai kolom otomatis; lint bersih; nol error console/server.
+
+Stage Summary:
+- Popup KMZ/KML kini menampilkan data terstruktur rapi seperti ArcGIS, bukan kode HTML mentah.
+- Pasangan label-nilai dari HTML masuk ke atribut fitur -> ikut tampil di tabel & ikut diekspor ke Excel/SHP/KMZ.
+- Bug popup poligon/garis (ReferenceError mapRef) diperbaiki.
+- Artefak uji: samples/uji-popup-odp.kmz, download/uji-popup-final.png, download/uji-popup-poligon.png, download/uji-tabel-atribut.png.

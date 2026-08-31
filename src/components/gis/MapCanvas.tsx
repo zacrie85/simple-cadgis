@@ -152,7 +152,7 @@ export default function MapCanvas() {
           fillColor: sh.color,
           fillOpacity: 0.15,
         });
-        poly.on("click", () => bukaPopupBentuk(sh));
+        poly.on("click", () => bukaPopupBentuk(mapRef.current!, sh));
         poly.addTo(l.shapes);
       } else if (latlngs.length >= 2) {
         const line = L.polyline(latlngs, {
@@ -160,7 +160,7 @@ export default function MapCanvas() {
           weight: terpilih ? 4 : 2.5,
           dashArray: sh.kind === "open" ? "8 6" : undefined,
         });
-        line.on("click", () => bukaPopupBentuk(sh));
+        line.on("click", () => bukaPopupBentuk(mapRef.current!, sh));
         line.addTo(l.shapes);
       }
     }
@@ -295,16 +295,16 @@ function bukaPopupTitik(map: L.Map, p: GisPoint, l: NonNullable<typeof layerRef.
   const el = document.createElement("div");
   el.className = "space-y-1.5 min-w-[200px]";
   const attrsHtml = Object.entries(p.attrs)
-    .slice(0, 8)
-    .map(([k, v]) => `<div class="flex gap-2 text-[11px]"><span class="text-slate-400 min-w-[70px]">${escapeHtml(k)}</span><span class="text-slate-700 break-all">${escapeHtml(v)}</span></div>`)
+    .slice(0, 14)
+    .map(([k, v]) => `<div class="flex gap-2 text-[11px] py-0.5"><span class="text-slate-400 min-w-[80px] max-w-[130px] shrink-0 break-words">${escapeHtml(k)}</span><span class="text-slate-700 break-all">${escapeHtml(v)}</span></div>`)
     .join("");
   el.innerHTML = `
     <div class="font-semibold text-slate-900 text-sm">${escapeHtml(p.title || "Titik")}</div>
-    ${p.description ? `<div class="text-xs text-slate-600">${escapeHtml(p.description)}</div>` : ""}
+    ${p.description ? `<div class="text-xs text-slate-600 whitespace-pre-line break-words max-h-32 overflow-y-auto scrollbar-halus">${escapeHtml(p.description)}</div>` : ""}
     ${p.elevation != null ? `<div class="text-xs"><span class="text-slate-400">Elevasi:</span> <b>${p.elevation} m</b></div>` : ""}
     <div class="text-xs text-slate-500">${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}</div>
     ${p.photo ? `<img src="${p.photo}" alt="Foto titik" class="rounded-lg max-h-32 w-auto border"/>` : ""}
-    ${attrsHtml ? `<div class="border-t pt-1.5 mt-1">${attrsHtml}</div>` : ""}
+    ${attrsHtml ? `<div class="border-t pt-1.5 mt-1 max-h-40 overflow-y-auto scrollbar-halus">${attrsHtml}</div>` : ""}
     <div class="flex gap-1.5 pt-1">
       <button data-act="edit" class="flex-1 rounded-lg bg-blue-600 text-white text-xs py-1.5 px-2 hover:bg-blue-700">✏ Edit</button>
       <button data-act="zoom" class="rounded-lg bg-slate-100 text-slate-700 text-xs py-1.5 px-2 hover:bg-slate-200">🔍</button>
@@ -319,25 +319,24 @@ function bukaPopupTitik(map: L.Map, p: GisPoint, l: NonNullable<typeof layerRef.
   el.querySelector('[data-act="hapus"]')?.addEventListener("click", () => {
     useGis.getState().deletePoint(p.id);
   });
-  L.popup({ maxWidth: 320 }).setLatLng([p.lat, p.lng]).setContent(el).openOn(map);
+  L.popup({ maxWidth: 360, minWidth: 260 }).setLatLng([p.lat, p.lng]).setContent(el).openOn(map);
   void l;
 }
 
-function bukaPopupBentuk(sh: GisShape) {
-  const map = mapRef.current;
+function bukaPopupBentuk(map: L.Map | null, sh: GisShape) {
   if (!map) return;
   const tengah = sh.vertices.reduce((a, v) => ({ lat: a.lat + v.lat / sh.vertices.length, lng: a.lng + v.lng / sh.vertices.length }), { lat: 0, lng: 0 });
   const el = document.createElement("div");
   el.className = "space-y-1.5 min-w-[200px]";
   const attrsHtml = Object.entries(sh.attrs)
-    .slice(0, 8)
-    .map(([k, v]) => `<div class="flex gap-2 text-[11px]"><span class="text-slate-400 min-w-[70px]">${escapeHtml(k)}</span><span class="text-slate-700 break-all">${escapeHtml(v)}</span></div>`)
+    .slice(0, 14)
+    .map(([k, v]) => `<div class="flex gap-2 text-[11px] py-0.5"><span class="text-slate-400 min-w-[80px] max-w-[130px] shrink-0 break-words">${escapeHtml(k)}</span><span class="text-slate-700 break-all">${escapeHtml(v)}</span></div>`)
     .join("");
   el.innerHTML = `
     <div class="font-semibold text-slate-900 text-sm">${escapeHtml(sh.title)}</div>
     <div class="text-xs text-slate-500">${sh.kind === "closed" ? "Poligon tertutup" : "Garis terbuka"} • ${sh.vertices.length} titik</div>
-    ${sh.description ? `<div class="text-xs text-slate-600">${escapeHtml(sh.description)}</div>` : ""}
-    ${attrsHtml ? `<div class="border-t pt-1.5 mt-1">${attrsHtml}</div>` : ""}
+    ${sh.description ? `<div class="text-xs text-slate-600 whitespace-pre-line break-words max-h-32 overflow-y-auto scrollbar-halus">${escapeHtml(sh.description)}</div>` : ""}
+    ${attrsHtml ? `<div class="border-t pt-1.5 mt-1 max-h-40 overflow-y-auto scrollbar-halus">${attrsHtml}</div>` : ""}
     <div class="flex flex-wrap gap-1.5 pt-1">
       <button data-act="edit" class="flex-1 rounded-lg bg-blue-600 text-white text-xs py-1.5 px-2 hover:bg-blue-700">✏ Edit</button>
       ${sh.kind === "closed" ? `<button data-act="dalam" class="rounded-lg bg-emerald-50 text-emerald-700 text-xs py-1.5 px-2 hover:bg-emerald-100">Titik di dalam</button>` : ""}
@@ -354,5 +353,5 @@ function bukaPopupBentuk(sh: GisShape) {
   el.querySelector('[data-act="hapus"]')?.addEventListener("click", () => {
     useGis.getState().deleteShape(sh.id);
   });
-  L.popup({ maxWidth: 320 }).setLatLng([tengah.lat, tengah.lng]).setContent(el).openOn(map);
+  L.popup({ maxWidth: 360, minWidth: 260 }).setLatLng([tengah.lat, tengah.lng]).setContent(el).openOn(map);
 }

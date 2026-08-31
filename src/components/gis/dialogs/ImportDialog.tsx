@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useGis } from "@/lib/gis/store";
 import { FloatingWindow } from "../Chips";
 import { ParseStream } from "@/lib/gis/parse-client";
+import { bersihkanDeskripsiHtml } from "@/lib/gis/htmlDesc";
 import { parseKolomKoordinat, uid } from "@/lib/gis/geo";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
 import { toast } from "sonner";
@@ -95,26 +96,28 @@ export default function ImportDialog() {
       },
       onFeatures: (points, shapes) => {
         for (const p of points) {
+          const bersih = bersihkanDeskripsiHtml(p.description, p.attrs, p.name);
           fiturRef.current.points.push({
             id: uid("titik"),
             lat: p.lat,
             lng: p.lng,
             title: p.name,
-            description: p.description,
-            attrs: p.attrs,
+            description: bersih.description,
+            attrs: bersih.attrs,
             source: "kml",
             visible: true,
           });
         }
         for (const sh of shapes) {
+          const bersih = bersihkanDeskripsiHtml(sh.description, sh.attrs, sh.name);
           fiturRef.current.shapes.push({
             id: uid("shape"),
             kind: sh.kind,
             vertices: sh.vertices,
             title: sh.name,
-            description: sh.description,
+            description: bersih.description,
             color: sh.kind === "closed" ? "#f59e0b" : "#10b981",
-            attrs: sh.attrs,
+            attrs: bersih.attrs,
             source: "kml",
             visible: true,
           });
