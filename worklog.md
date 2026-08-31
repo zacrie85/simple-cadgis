@@ -168,3 +168,24 @@ Work Log:
 Stage Summary:
 - Menu Layout kini punya 4 pilihan logo arah utara (Kompas/Bintang/Panah/Klasik) yang bisa dipilih manual, dipindah via 4 sudut atau diseret bebas di peta, dan diubah ukurannya — semua ikut tercetak.
 - Artefak uji: download/uji-logo-utara.png, download/uji-logo-utara-final.png.
+
+---
+Task ID: 10
+Agent: Super Z (main agent)
+Task: Fitur baru di menu Layout — legenda peta bergaya referensi user (kotak sudut melengkung, judul terpusat, item 2 kolom) + fitur tambah foto ke layout dengan ukuran & posisi diatur manual.
+
+Work Log:
+- Legenda baru di LayoutView: kotak rounded-2xl (sudut melengkung sesuai permintaan) bg-white/95 + shadow, judul editable langsung di sheet (input border-b terpusat, stopPropagation agar klik edit tidak menyeret), grid 1/2 kolom; posisi = persen pusat bingkai peta + translate(-50%,-50%), default kiri-bawah (16/84).
+- Item legenda otomatis dari data tampil: Titik (n) simbol bulat biru, Poligon (n) kotak border warna + fill muda, Garis (n) garis warna, Kontur (n garis) garis warna elevasi, Label (n) huruf T italic — komponen SimbolLegenda meniru penampilan peta; hitungan hanya menghitung shape visible.
+- Posisi legenda manual: 4 preset sudut (↖↗↙↘) di panel + drag bebas via pointer capture (clamp 10-90% / 8-92%), stopPropagation agar peta tidak ikut.
+- Foto: tombol "Tambah Foto" (input file hidden accept image/*) → FileReader → Image → kompres canvas sisi terpanjang maks 1400px (PNG dipertahankan PNG utk transparansi, lainnya JPEG 0.86) → dataURL; render level sheet (bukan bingkai) sehingga bisa ditaruh di mana saja termasuk area putih; posisi % pusat sheet, lebar px, rasio aspek asli terjaga.
+- Interaksi foto manual: seret badan foto (posisi bebas, clamp 2-98%), handle resize titik biru pojok kanan-bawah (sudut kiri-atas terkunci, lebar 48px-min, maks 96% sheet, tinggi mengikuti rasio), preset ukuran Kecil 140/Sedang 240/Besar 360 px, tombol X merah hapus di foto terpilih + tombol hapus di list panel, klik list = pilih foto, ring biru + z-index naik saat aktif; multi-foto didukung (badge jumlah).
+- Panel Layout: seksi "Legenda peta" (toggle Tampil, info item otomatis, tombol 1/2 kolom, 4 posisi sudut) + seksi "Foto di layout" (upload, list foto dgn hapus, preset ukuran, hint); print-color-adjust: exact ditambahkan ke @media print agar warna legenda/foto ikut tercetak; legenda lama yang readonly dihapus.
+- Kendala verifikasi (bukan bug): panel Layout menutupi foto di tengah sheet saat drag (klik jatuh ke panel) → panel digeser dulu via header; refs agent-browser basi setelah struktur panel berubah → klik tombol via DOM selector label "Ukuran foto terpilih".
+- Verifikasi Agent Browser end-to-end (demo 25 titik + 2 poligon): legenda default 3 item rounded 16px; preset posisi → 84%/14%; 1 kolom → grid-cols-1; judul diedit → "LEGENDA PETA KERJA"; drag legenda → 48.1%/59.6% mengikuti kursor; upload foto → muncul di tengah 240px rasio terjaga; drag foto → 28.6%/32.2%; preset Besar/Kecil → 360/140px; drag handle → 280px dengan kiri-atas terkunci; hapus via X → sheet & list bersih; upload ulang + komposisi final; nol error console/server; lint bersih.
+- Screenshot: download/uji-legenda-awal.png, download/uji-layout-lengkap.png, download/uji-legenda-foto-akhir.png (legenda 2 kolom + foto kompas terpilih dengan ring/handle/X).
+
+Stage Summary:
+- Menu Layout kini punya legenda peta ala ArcGIS: kotak sudut melengkung, judul bisa diedit langsung, item otomatis mengikuti data, 1/2 kolom, posisi via preset sudut atau diseret bebas — semua ikut tercetak.
+- Fitur foto: bisa menambahkan gambar apa pun ke layout, digerakkan & diubah ukurannya manual (seret + handle + preset), multi-foto, ikut tercetak.
+- Artefak uji: download/uji-legenda-awal.png, download/uji-layout-lengkap.png, download/uji-legenda-foto-akhir.png.
