@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import L from "leaflet";
 import { useGis } from "@/lib/gis/store";
 import { FloatingWindow } from "./Chips";
 import { warnaElevasi } from "@/lib/gis/contours";
+import { GAYA_UTARA, type GayaUtaraId } from "./NorthArrows";
 import { Printer, Move, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,6 +73,9 @@ export default function LayoutView() {
   const [skalaKini, setSkalaKini] = useState<number | null>(null);
   const [citraUpscale, setCitraUpscale] = useState(false);
   const [subJudulOtomatis, setSubJudulOtomatis] = useState(true);
+  const [gayaUtara, setGayaUtara] = useState<GayaUtaraId>("kompas");
+  const [posUtara, setPosUtara] = useState({ x: 91, y: 12 });
+  const [ukuranUtara, setUkuranUtara] = useState(56);
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -79,6 +83,8 @@ export default function LayoutView() {
   const lastAppliedRef = useRef<number | null>(null);
   const pernahKetikRef = useRef(false);
   const terapkanRef = useRef<(s: number) => void>(() => {});
+  const bingkaiRef = useRef<HTMLDivElement | null>(null);
+  const seretUtaraRef = useRef(false);
 
   // ---------- inisialisasi peta layout (menunggu div tersedia) ----------
   useEffect(() => {
@@ -310,6 +316,24 @@ export default function LayoutView() {
     toast.info("Skala otomatis: peta mengikuti seluruh data");
   };
 
+  // ---------- seret logo utara langsung di bingkai peta ----------
+  const seretUtaraMulai = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation(); // jangan geser peta Leaflet
+    seretUtaraRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const seretUtaraGerak = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!seretUtaraRef.current || !bingkaiRef.current) return;
+    const r = bingkaiRef.current.getBoundingClientRect();
+    setPosUtara({
+      x: Math.min(Math.max(((e.clientX - r.left) / r.width) * 100, 4), 96),
+      y: Math.min(Math.max(((e.clientY - r.top) / r.height) * 100, 5), 95),
+    });
+  };
+  const seretUtaraSelesai = () => {
+    seretUtaraRef.current = false;
+  };
+
   return (
     <div className="relative flex-1 overflow-auto bg-slate-200 flex items-start justify-center p-6 print:bg-white print:p-0">
       <style>{`@media print { @page { size: A4 ${orientasi === "lanskap" ? "landscape" : "portrait"}; } }`}</style>
@@ -340,13 +364,36 @@ export default function LayoutView() {
         </div>
 
         {/* Bingkai peta */}
-        <div className="absolute left-8 right-8 top-[86px] bottom-[70px] border border-slate-400 overflow-hidden rounded-sm">
+        <div
+          ref={bingkaiRef}
+          className="absolute left-8 right-8 top-[86px] bottom-[70px] border border-slate-400 overflow-hidden rounded-sm"
+        >
           <div ref={setMapDiv} className="w-full h-full" />
-          {/* Panah utara */}
-          <div className="absolute top-2 right-3 text-center pointer-events-none select-none z-10">
-            <div className="text-2xl leading-none">↑</div>
-            <div className="text-[10px] font-bold -mt-1">U</div>
-          </div>
+          {/* Logo arah utara — gaya/posisi/ukuran dari Panel Layout, bisa diseret */}
+          {(() => {
+            const gayaAktif = GAYA_UTARA.find((g) => g.id === gayaUtara) ?? GAYA_UTARA[0];
+            const CompUtara = gayaAktif.Comp;
+            return (
+              <div
+                className="absolute z-[700] cursor-move select-none touch-none"
+                style={{
+                  left: `${posUtara.x}%`,
+                  top: `${posUtara.y}%`,
+                  transform: "translate(-50%, -50%)",
+                  width: ukuranUtara,
+                }}
+                onPointerDown={seretUtaraMulai}
+                onPointerMove={seretUtaraGerak}
+                onPointerUp={seretUtaraSelesai}
+                onPointerCancel={seretUtaraSelesai}
+                title={`Logo utara (${gayaAktif.label}) — seret untuk memindahkan`}
+              >
+                <div className="pointer-events-none rounded-lg border border-slate-300 bg-white/90 p-0.5 shadow">
+                  <CompUtara className="block h-auto w-full" />
+                </div>
+              </div>
+            );
+          })()}
           {/* Legenda */}
           {legendaItems.length > 0 && (
             <div className="absolute bottom-2 left-2 bg-white/90 border border-slate-300 rounded-lg px-2.5 py-1.5 space-y-1 pointer-events-none z-10">
@@ -410,6 +457,79 @@ export default function LayoutView() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-slate-500 mb-1.5">Logo arah utara</p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {GAYA_UTARA.map((g) => (
+                    <button
+                      key={g.id}
+                      onClick={() => setGayaUtara(g.id)}
+                      title={g.label}
+                      aria-pressed={gayaUtara === g.id}
+                      className={`flex h-12 items-center justify-center rounded-lg border px-1 ${
+                        gayaUtara === g.id
+                          ? "border-blue-600 bg-blue-50 ring-2 ring-blue-500"
+                          : "border-slate-200 bg-white hover:bg-slate-100"
+                      }`}
+                    >
+                      <g.Comp className="h-10 w-auto" />
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-xs font-semibold text-slate-500 mt-2.5 mb-1.5">Posisi logo</p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(
+                    [
+                      ["Kiri atas", "↖", 12, 10],
+                      ["Kanan atas", "↗", 88, 10],
+                      ["Kiri bawah", "↙", 12, 90],
+                      ["Kanan bawah", "↘", 88, 90],
+                    ] as const
+                  ).map(([label, ikon, x, y]) => (
+                    <button
+                      key={label}
+                      onClick={() => setPosUtara({ x, y })}
+                      title={label}
+                      aria-pressed={Math.abs(posUtara.x - x) < 1 && Math.abs(posUtara.y - y) < 1}
+                      className={`rounded-lg border py-1 text-xs ${
+                        Math.abs(posUtara.x - x) < 1 && Math.abs(posUtara.y - y) < 1
+                          ? "border-blue-600 bg-blue-50 font-semibold text-blue-700 ring-2 ring-blue-500"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      {ikon}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-xs font-semibold text-slate-500 mt-2.5 mb-1.5">Ukuran logo</p>
+                <div className="flex gap-1.5">
+                  {(
+                    [
+                      ["Kecil", 40],
+                      ["Sedang", 56],
+                      ["Besar", 76],
+                    ] as const
+                  ).map(([label, v]) => (
+                    <button
+                      key={label}
+                      onClick={() => setUkuranUtara(v)}
+                      aria-pressed={ukuranUtara === v}
+                      className={`flex-1 rounded-lg px-2 py-1 text-xs font-medium ${
+                        ukuranUtara === v ? "bg-blue-600 text-white" : "bg-slate-100 hover:bg-slate-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1.5 flex items-start gap-1">
+                  <Move className="h-3 w-3 shrink-0 mt-0.5" />
+                  Logo juga bisa diseret langsung di atas peta ke posisi mana pun.
+                </p>
               </div>
 
               <div>

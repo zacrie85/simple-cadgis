@@ -151,3 +151,20 @@ Work Log:
 Stage Summary:
 - Menu Layout kini punya box skala 1:n yang otomatis mengunci zoom peta persis seperti ArcGIS, lengkap preset, badge mode, sub-judul skala otomatis, dan @page dinamis untuk potret.
 - Artefak uji: download/uji-skala-layout.png.
+
+---
+Task ID: 9
+Agent: Super Z (main agent)
+Task: Fitur baru di menu Layout — logo penunjuk arah utara sesuai gambar referensi user + 3 gaya lain yang bisa dipilih manual, posisi diatur manual (tombol sudut + seret bebas), ukuran Kecil/Sedang/Besar.
+
+Work Log:
+- File baru src/components/gis/NorthArrows.tsx: 4 komponen SVG murni (ikut tercetak, tanpa file gambar): UtaraKompas (cincin derajat 72 tick + bintang 8 arah dua-warna + jarum merah/teal + huruf U/S/B/T — meniru referensi user), UtaraBintang (rose hitam-putih klasik), UtaraPanah (minimal modern setengah solid), UtaraKlasik (panah teks lama). Helper Lengan() menggambar lengan kompas dua-segitiga (sisi solid + sisi putih bergaris). Huruf memakai U (Utara), B (Barat), T (Timur) konsisten Bahasa Indonesia.
+- LayoutView: state gayaUtara (default kompas), posUtara {x,y} persen terhadap bingkai peta (default 91/12), ukuranUtara px. Logo dirender di dalam bingkai peta dengan translate(-50%,-50%), z-[700] (di atas pane marker/tooltip), kartu putih rounded agar terbaca di citra satelit.
+- Posisi manual: 4 tombol sudut (↖↗↙↘) + seret bebas via pointer capture (stopPropagation agar peta Leaflet tidak ikut geser; clamp 4-96%/5-95%); hint di panel.
+- Panel Layout seksi "Logo arah utara": grid 4 pratinjau gaya (ring biru saat dipilih), grid 4 tombol sudut dengan highlight posisi aktif, 3 tombol ukuran.
+- Verifikasi Agent Browser end-to-end: logo kompas default tampil kanan-atas; klik gaya → Bintang klasik → Panah modern (judul title berubah); tombol ↙ memindah ke 12%/90%; Besar → 76px; drag mouse (scroll dulu karena logo di bawah lipatan viewport — drag gagal bukan bug, elementFromPoint null) → logo mengikuti kursor ke 36.755%/87.107% tepat sesuai koordinat mouse; kembali kompas ↗ Sedang; pratinjau SVG panel render bagus; nol error console; lint bersih.
+- Screenshot: download/uji-logo-utara.png (panel + 4 pratinjau), download/uji-logo-utara-final.png (logo kompas terpasang di peta).
+
+Stage Summary:
+- Menu Layout kini punya 4 pilihan logo arah utara (Kompas/Bintang/Panah/Klasik) yang bisa dipilih manual, dipindah via 4 sudut atau diseret bebas di peta, dan diubah ukurannya — semua ikut tercetak.
+- Artefak uji: download/uji-logo-utara.png, download/uji-logo-utara-final.png.
