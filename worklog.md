@@ -46,3 +46,18 @@ Stage Summary:
 - GeoKita selesai: GIS web satu-panel-atas, 100% client-side, siap static export ke GitHub Pages & installable PWA.
 - Semua 19 permintaan fitur pengguna terimplementasi & teruji kecuali keterbatasan yang didokumentasikan di README (batas 300rb baris, tanggal XLSX serial, SHP WGS84).
 - Screenshot verifikasi: download/geokita-*.png (peta, kontur, volume, 3D, ukur, tabel, impor, satelit, layout).
+
+---
+Task ID: 3
+Agent: Super Z (main agent)
+Task: Perbaikan laporan pengguna "aplikasi hanya menampilkan logo Z".
+
+Work Log:
+- Diagnosis: dev server Next.js tidak berjalan (port 3000 mati, curl 000) sehingga halaman preview hanya menampilkan loading logo Z.
+- Penyebab: environment/sesi di-restart sehingga proses dev server hilang; kode aplikasi GeoKita tidak bermasalah.
+- Aksi: menyalakan ulang `bun run dev` (Next.js 16.1.3 Turbopack, Ready, GET / 200).
+- Verifikasi Agent Browser: judul halaman "GeoKita — GIS Web: Peta, Kontur, Cut & Fill, Ekspor SHP/KMZ", toolbar atas lengkap (Berkas/Gambar/Analisis/Keluaran/Peta/Navigasi), peta OSM Semarang + titik demo tampil, nol error console.
+
+Stage Summary:
+- Aplikasi GeoKita kembali normal & terverifikasi; screenshot: download/cek-geokita.png.
+- Tidak ada perubahan kode; cukup restart server.
