@@ -237,3 +237,24 @@ Work Log:
 
 Stage Summary:
 - Akar masalah murni infrastruktur: dev server berhenti (kemungkinan karena sesi sebelumnya berakhir), bukan regresi kode. Server kembali berjalan di localhost:3000 dan seluruh fitur (termasuk 3 upgrade Task 12) terverifikasi normal.
+
+---
+Task ID: 14
+Agent: Super Z (main agent)
+Task: Push aplikasi ke GitHub (user: zacrie85) dengan nama baru "SIMPLE CADGIS" + buat agar bisa di-install ke PC.
+
+Work Log:
+- Rename aplikasi: semua string user-visible "GeoKita" → "SIMPLE CADGIS" (judul halaman layout.tsx, brand header Toolbar, manifest PWA, footer layout "Dibuat dengan SIMPLE CADGIS", nama file ekspor ExportDialog jadi SIMPLE-CADGIS-*, default dokumen KML, demo, komentar). Identifer internal lowercase (class CSS geokita-label, event geokita-zoom) sengaja dipertahankan agar perubahan aman.
+- sw.js: cache "geokita-v1" → "simplecadgis-v2" (cache-bust untuk PWA lama).
+- package.json: name simple-cadgis, version 1.0.0, main electron/main.cjs, scripts electron:dev & dist:win, trustedDependencies electron; devDeps electron@38.8.6 + electron-builder@26.15.3 (bun install OK).
+- Electron main.cjs: server HTTP statis lokal 127.0.0.1:port-acak menyajikan out/ (agar path absolut /_next valid), BrowserWindow 1400x880 judul SIMPLE CADGIS, menu bawaan disembunyikan, F5/Ctrl+R reload, Ctrl+Shift+I devtools, link eksternal dibuka di browser sistem, fallback SPA index.html.
+- electron-builder.config.js: appId com.zacrie.simplecadgis, productName SIMPLE CADGIS, target NSIS x64, icon electron/icon.png (512px, salinan icon PWA), output dist-desktop/, artifact SIMPLE-CADGIS-Setup-${version}.exe, shortcut desktop.
+- Workflow .github/workflows/build-desktop.yml (bun install → bun run build → npx electron-builder --win nsis; upload artifact; softprops/action-ghrelease saat tag v*). Perbaiki typo lama deploy.yml: "branches: ain]" → "[main]".
+- README.md dirombak: nama baru, cara install .exe dari Releases, cara PWA, build lokal dist:win.
+- Perbaikan type error yang muncul saat build produksi (tak terlihat di dev): MapCanvas layerRef opsional → type LayerMap non-opsional + alias modul; opsi keyboard: false dihapus (tak dikenal tipe leaflet baru); download.ts terima Uint8Array dengan cast BlobPart (TS 5.9); parse-worker ZipFileCb dibungkus NonNullable; tsconfig exclude examples/skills/tests/mini-services/electron/dist-desktop.
+- Verifikasi: bun run lint bersih; bun run build sukses (static export out/, 3/3 halaman); smoke test Electron headless (Xvfb :99 + --no-sandbox): jendela terbuka, title "SIMPLE CADGIS — GIS Web: ...", server internal http://127.0.0.1:<port>/, nol error log; dev server 200 + brand SIMPLE CADGIS tampil di UI, nol error browser.
+- Commit lokal dibuat (SIMPLE CADGIS v1.0.0 — rename + Electron + CI). Push ke GitHub menunggu PAT dari user (gh CLI tidak tersedia, tidak ada token di environment).
+
+Stage Summary:
+- Aplikasi resmi bernama SIMPLE CADGIS v1.0.0, siap-push ke github.com/zacrie85, dan punya jalur installer Windows otomatis: push tag v* → GitHub Actions membangun SIMPLE-CADGIS-Setup-1.0.0.exe → muncul di Releases untuk diunduh & dipasang di PC.
+- Alternatif install: PWA via GitHub Pages (workflow deploy.yml sudah diperbaiki).
