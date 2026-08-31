@@ -18,6 +18,9 @@ const MM_PER_PX = 25.4 / 96;
 const MPP_Z0 = 156543.03392;
 const ZOOM_MAKS = 25; // di atas ZOOM_TILE_ASLI citra di-upscale digital
 const ZOOM_TILE_ASLI = 19;
+/** Pusat & zoom awal peta layout (wilayah Indonesia) — dipakai saat belum ada data. */
+const PUSAT_AWAL: [number, number] = [-6.9932, 110.4203]; // Semarang
+const ZOOM_AWAL = 12;
 
 const derajatKeRadian = (d: number) => (d * Math.PI) / 180;
 
@@ -128,11 +131,19 @@ export default function LayoutView() {
       zoomDelta: 0.5,
       maxZoom: ZOOM_MAKS,
     });
+    // WAJIB: set view sejak awal — tanpa ini getCenter() melempar
+    // "Set map center and zoom first" saat layout dibuka tanpa data
+    // (fitBounds hanya jalan bila ada titik/poligon).
+    map.setView(PUSAT_AWAL, ZOOM_AWAL);
     L.control.scale({ imperial: false, position: "bottomright", maxWidth: 120 }).addTo(map);
     const perbaruiSkala = () => {
-      const c = map.getCenter();
-      setSkalaKini(skalaDariZoom(map.getZoom(), c.lat));
-      setCitraUpscale(map.getZoom() > ZOOM_TILE_ASLI + 0.01);
+      try {
+        const c = map.getCenter();
+        setSkalaKini(skalaDariZoom(map.getZoom(), c.lat));
+        setCitraUpscale(map.getZoom() > ZOOM_TILE_ASLI + 0.01);
+      } catch {
+        // view belum siap (peta baru dibuat) — abaikan, akan dipanggil ulang pada zoomend/moveend
+      }
     };
     map.on("zoomend", perbaruiSkala);
     map.on("moveend", perbaruiSkala);

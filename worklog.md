@@ -189,3 +189,18 @@ Stage Summary:
 - Menu Layout kini punya legenda peta ala ArcGIS: kotak sudut melengkung, judul bisa diedit langsung, item otomatis mengikuti data, 1/2 kolom, posisi via preset sudut atau diseret bebas — semua ikut tercetak.
 - Fitur foto: bisa menambahkan gambar apa pun ke layout, digerakkan & diubah ukurannya manual (seret + handle + preset), multi-foto, ikut tercetak.
 - Artefak uji: download/uji-legenda-awal.png, download/uji-layout-lengkap.png, download/uji-legenda-foto-akhir.png.
+
+---
+Task ID: 11
+Agent: Super Z (main agent)
+Task: Perbaikan Runtime Error "Set map center and zoom first" pada LayoutView (getCenter dipanggil sebelum peta punya view).
+
+Work Log:
+- Akar masalah: peta layout dibuat dengan L.map() TANPA center/zoom awal; view baru ter-set oleh fitBounds yang HANYA jalan bila ada titik/poligon. Ketika layout dibuka saat data kosong, setTimeout 100 ms memanggil perbaruiSkala() → map.getCenter() melempar Error Leaflet "Set map center and zoom first" → overlay Runtime Error Next.js (laporan user, screenshot upload/pasted_image_1788188545814.png).
+- Perbaikan ganda di LayoutView: (1) map.setView(PUSAT_AWAL, ZOOM_AWAL) tepat setelah L.map — pusat Semarang [-6.9932, 110.4203] zoom 12 sebagai kanvas awal; (2) perbaruiSkala dibungkus try/catch defensif (view belum siap → diabaikan, dipanggil ulang otomatis pada zoomend/moveend). terapkanSkala otomatis ikut aman karena view kini selalu ada.
+- Verifikasi Agent Browser: halaman SEGAR tanpa data → langsung buka Layout → TIDAK crash lagi; getCenter() aman mengembalikan Semarang zoom 12; "Skala saat ini: 1:143.373" terhitung; legenda otomatis tersembunyi (tak ada data); nol error console/server. Regresi dengan data demo: kembali ke peta → muat demo → buka layout → fitBounds normal (zoom 16.27, pusat -6.990/110.434), legenda tampil, nol error. Lint bersih.
+- Screenshot: download/uji-layout-tanpa-data.png.
+
+Stage Summary:
+- Layout kini bisa dibuka dalam kondisi apa pun (data kosong maupun terisi) tanpa crash; peta kosong menampilkan wilayah awal Semarang dan skala tetap terhitung.
+- Artefak uji: download/uji-layout-tanpa-data.png.
