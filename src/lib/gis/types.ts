@@ -57,7 +57,9 @@ export type ToolMode =
   | "poly-closed"
   | "poly-open"
   | "text"
-  | "measure";
+  | "measure"
+  | "select" // blok data dengan drag kotak
+  | "zoombox"; // zoom ke area dengan drag kotak
 
 export type FeatureType = "point" | "shape";
 

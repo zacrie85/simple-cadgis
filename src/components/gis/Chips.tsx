@@ -1,7 +1,7 @@
 "use client";
 
 import { useGis } from "@/lib/gis/store";
-import { Check, X, Trash2, Loader2 } from "lucide-react";
+import { Check, X, Trash2, Loader2, MousePointerClick, Crop } from "lucide-react";
 import { useRef, useState, useEffect, useCallback } from "react";
 
 /** Chip mengambang di tengah-atas: panduan gambar + tombol Selesai/Batal. */
@@ -19,7 +19,11 @@ export function DrawChip() {
     "poly-closed": `Poligon tertutup — klik titik sudut (min. 3). Sudut terakhir otomatis tersambung ke titik pertama saat Selesai.`,
     "poly-open": `Garis terbuka — klik titik jalur (min. 2). Titik terakhir TIDAK tersambung ke titik pertama.`,
     measure: "Ukur jarak — klik titik 1, titik 2, dan seterusnya",
+    select: "Blok data — drag kotak di peta untuk memblok titik/poligon. Tahan Shift saat drag untuk menambah pilihan. Klik satu titik = pilih/hilangkan.",
+    zoombox: "Zoom kotak — drag area di peta untuk memperbesar ke area tersebut",
   };
+
+  const alatDragKotak = tool === "select" || tool === "zoombox";
 
   const minimal = tool === "poly-closed" ? 3 : tool === "poly-open" ? 2 : 0;
   const bisaSelesai =
@@ -29,9 +33,17 @@ export function DrawChip() {
   return (
     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[900] print:hidden" role="status">
       <div className="flex items-center gap-2 rounded-full bg-white/95 backdrop-blur border border-blue-200 shadow-lg pl-4 pr-1.5 py-1.5">
-        <span className="text-xs text-slate-700 flex items-center gap-1.5">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
-          {info[tool]}
+        <span className="text-xs text-slate-700 flex items-center gap-1.5 max-w-[min(80vw,560px)]">
+          {alatDragKotak ? (
+            tool === "select" ? (
+              <MousePointerClick className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+            ) : (
+              <Crop className="h-3.5 w-3.5 shrink-0 text-violet-600" />
+            )
+          ) : (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue-600" />
+          )}
+          <span className="line-clamp-2">{info[tool]}</span>
           {pendingCount > 0 && <b className="text-blue-700">• {pendingCount} titik</b>}
         </span>
         {(tool === "poly-closed" || tool === "poly-open" || tool === "measure") && (

@@ -81,3 +81,21 @@ Stage Summary:
 - Pasangan label-nilai dari HTML masuk ke atribut fitur -> ikut tampil di tabel & ikut diekspor ke Excel/SHP/KMZ.
 - Bug popup poligon/garis (ReferenceError mapRef) diperbaiki.
 - Artefak uji: samples/uji-popup-odp.kmz, download/uji-popup-final.png, download/uji-popup-poligon.png, download/uji-tabel-atribut.png.
+
+---
+Task ID: 5
+Agent: Super Z (main agent)
+Task: Fitur baru — blok data drag kotak (seleksi), hapus data terpilih, dan zoom kotak (drag area) ala ArcGIS/AutoCAD.
+
+Work Log:
+- types.ts: ToolMode ditambah "select" dan "zoombox".
+- store.ts: mapClick mengabaikan select/zoombox (interaksi drag ditangani MapCanvas); aksi baru deleteSelected() menghapus titik+bentuk+label terpilih sekaligus dan membersihkan seleksi.
+- MapCanvas: efek drag-persegi untuk select/zoombox (matikan dragging peta selama alat aktif, pratinjau L.Rectangle biru/violet, ambang 6px, fallback mouseup di luar peta via window listener, Esc keluar alat). Blok = semua titik dalam kotak + bentuk yang beririsan (vertex dalam kotak ATAU bbox intersects); Shift/Ctrl saat drag = tambah ke pilihan; zoombox = fitBounds + alat otomatis nonaktif. Klik kosong (tanpa drag) pada mode blok = kosongkan seleksi kecuali yang diklik fitur (flag klikFiturBarusan). Klik titik/poligon saat mode blok = toggle pilih satu (popup ditunda).
+- Chips: DrawChip menampilkan panduan Blok & Zoom Kotak dengan ikon MousePointerClick/Crop.
+- Toolbar: grup baru PILIH (Blok/BoxSelect + Hapus/Trash2 dengan hitungan terpilih, merah saat ada pilihan, disabled saat kosong); Navigasi ditambah Zoom Kotak (Crop) sebelum Perbesar/Perkecil.
+- Verifikasi Agent Browser (data demo 25 titik + 2 poligon): drag kotak besar → toast "27 fitur terblok", semua marker/bentuk oranye, tombol "Hapus (27)"; klik kosong → seleksi 0; drag kotak kecil → 4 titik + 2 poligon terpilih; Hapus → 21 titik tersisa, poligon lenyap, tombol kembali disabled; Zoom Kotak drag → zoom 16→18 tepat ke area, alat auto-exit; klik satu titik mode blok → 1 terpilih; lint bersih; nol error.
+
+Stage Summary:
+- Tiga fitur baru aktif: Blok (drag kotak seleksi, Shift=tambah, klik=toggle), Hapus Terpilih (dengan hitungan), Zoom Kotak (auto-exit setelah zoom).
+- Semua tombol tetap di panel atas (sesuai syarat tanpa panel samping/bawah).
+- Screenshot: download/uji-blok-aktif.png, uji-blok-drag.png, uji-hapus-terpilih.png, uji-zoom-kotak.png.

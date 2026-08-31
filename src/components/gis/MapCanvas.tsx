@@ -2,12 +2,19 @@
 
 import { useEffect, useRef } from "react";
 import L from "leaflet";
+import { toast } from "sonner";
 import { useGis } from "@/lib/gis/store";
 import { warnaElevasi } from "@/lib/gis/contours";
 import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
 
 const RENDER_CAP = 20000; // batas titik dirender (data lengkap tetap di memori/tabel)
+
+// Penanda sementara: true bila fitur baru saja diklik pada mode blok
+// (mencegah klik kosong pada peta menghapus seleksi yang baru dibuat)
+let klikFiturBarusan = false;
+// Mode drag terakhir: Shift/Ctrl ditekan saat mulai drag = tambah ke pilihan
+let dragTambah = false;
 
 export default function MapCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,6 +120,140 @@ export default function MapCanvas() {
     el.style.cursor = tool ? "crosshair" : "";
   }, [tool]);
 
+  // ---------- Alat blok seleksi & zoom kotak (drag persegi) ----------
+  useEffect(() => {
+    if (tool !== "select" && tool !== "zoombox") return;
+    const map = mapRef.current;
+    const l = layerRef.current;
+    if (!map || !l) return;
+
+    // matikan geser peta agar drag digunakan untuk kotak
+    map.dragging.disable();
+    map.doubleClickZoom.disable();
+
+    let awal: L.LatLng | null = null;
+    let posisiTerakhir: L.LatLng | null = null;
+    let kotak: L.Rectangle | null = null;
+    let cukupJauh = false;
+
+    const gaya =
+      tool === "select"
+        ? { color: "#2563eb", weight: 1.5, dashArray: "6 4", fillColor: "#3b82f6", fillOpacity: 0.12 }
+        : { color: "#7c3aed", weight: 1.5, dashArray: "6 4", fillColor: "#7c3aed", fillOpacity: 0.12 };
+
+    const selesaikan = (akhir: L.LatLng | null) => {
+      const mula = awal;
+      awal = null;
+      posisiTerakhir = null;
+      if (kotak) {
+        l.temp.removeLayer(kotak);
+        kotak = null;
+      }
+      if (!mula || !akhir) return;
+
+      if (!cukupJauh) {
+        // hanya klik (tanpa drag)
+        if (tool === "select") {
+          // klik area kosong mengosongkan seleksi — kecuali yang diklik adalah fitur
+          setTimeout(() => {
+            if (!klikFiturBarusan) useGis.getState().clearSelection();
+            klikFiturBarusan = false;
+          }, 0);
+        }
+        return;
+      }
+
+      const bounds = L.latLngBounds(mula, akhir);
+
+      if (tool === "zoombox") {
+        map.fitBounds(bounds, { padding: [8, 8] });
+        useGis.getState().setTool(null); // selesai otomatis seperti Zoom Window AutoCAD
+        return;
+      }
+
+      // ---- blok seleksi: semua titik di dalam kotak + bentuk yang beririsan ----
+      const st = useGis.getState();
+      const tambah = dragTambah;
+      const dasar = tambah ? [...st.selection] : [];
+      const ids = new Set(dasar);
+      let nTitik = 0;
+      let nBentuk = 0;
+      const dasarSet = new Set(dasar);
+      for (const p of st.points) {
+        if (bounds.contains([p.lat, p.lng])) {
+          if (!dasarSet.has(p.id)) nTitik++;
+          ids.add(p.id);
+        }
+      }
+      for (const sh of st.shapes) {
+        const bbox = L.latLngBounds(sh.vertices.map((v) => [v.lat, v.lng] as [number, number]));
+        const kena =
+          sh.vertices.some((v) => bounds.contains([v.lat, v.lng])) || bbox.intersects(bounds);
+        if (kena) {
+          if (!dasarSet.has(sh.id)) nBentuk++;
+          ids.add(sh.id);
+        }
+      }
+      useGis.getState().setSelection(Array.from(ids));
+      const totalBaru = ids.size - dasarSet.size;
+      toast.success(`${totalBaru} fitur terblok`, {
+        description: `${nTitik} titik + ${nBentuk} poligon/garis masuk kotak${tambah ? " (ditambah ke pilihan)" : ""}. Total terpilih: ${ids.size}. Klik Hapus untuk menghapus.`,
+      });
+    };
+
+    const onMouseDown = (e: L.LeafletMouseEvent) => {
+      awal = e.latlng;
+      posisiTerakhir = e.latlng;
+      cukupJauh = false;
+    };
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      posisiTerakhir = e.latlng;
+      if (!awal) return;
+      const p1 = map.latLngToContainerPoint(awal);
+      const p2 = map.latLngToContainerPoint(e.latlng);
+      if (Math.abs(p1.x - p2.x) < 6 || Math.abs(p1.y - p2.y) < 6) return;
+      cukupJauh = true;
+      const bounds = L.latLngBounds(awal, e.latlng);
+      if (!kotak) {
+        kotak = L.rectangle(bounds, { ...gaya, interactive: false, keyboard: false });
+        kotak.addTo(l.temp);
+      } else {
+        kotak.setBounds(bounds);
+      }
+    };
+    const onMouseUp = () => selesaikan(posisiTerakhir);
+    const onWindowUp = () => {
+      if (awal) selesaikan(posisiTerakhir);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") useGis.getState().setTool(null);
+    };
+
+    // Shift/Ctrl saat mulai drag = tambahkan ke pilihan yang sudah ada
+    const onDownShift = (e: L.LeafletMouseEvent) => {
+      dragTambah = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+      onMouseDown(e);
+    };
+
+    map.on("mousedown", onDownShift);
+    map.on("mousemove", onMouseMove);
+    map.on("mouseup", onMouseUp);
+    window.addEventListener("mouseup", onWindowUp);
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      map.off("mousedown", onDownShift);
+      map.off("mousemove", onMouseMove);
+      map.off("mouseup", onMouseUp);
+      window.removeEventListener("mouseup", onWindowUp);
+      window.removeEventListener("keydown", onKey);
+      if (kotak && l.temp.hasLayer(kotak)) l.temp.removeLayer(kotak);
+      map.dragging.enable();
+      map.doubleClickZoom.enable();
+      dragTambah = false;
+    };
+  }, [tool]);
+
   // ---------- Render titik ----------
   useEffect(() => {
     const l = layerRef.current;
@@ -131,7 +272,15 @@ export default function MapCanvas() {
         fillColor: terpilih ? "#fbbf24" : "#3b82f6",
         fillOpacity: 0.9,
       });
-      marker.on("click", () => bukaPopupTitik(mapRef.current!, p, l));
+      marker.on("click", () => {
+        // mode blok: klik titik = pilih/hilangkan satu titik (tanpa popup)
+        if (useGis.getState().tool === "select") {
+          klikFiturBarusan = true;
+          useGis.getState().toggleSelect(p.id);
+          return;
+        }
+        bukaPopupTitik(mapRef.current!, p, l);
+      });
       marker.addTo(l.points);
     }
   }, [points, selection]);
@@ -152,7 +301,14 @@ export default function MapCanvas() {
           fillColor: sh.color,
           fillOpacity: 0.15,
         });
-        poly.on("click", () => bukaPopupBentuk(mapRef.current!, sh));
+        poly.on("click", () => {
+          if (useGis.getState().tool === "select") {
+            klikFiturBarusan = true;
+            useGis.getState().toggleSelect(sh.id);
+            return;
+          }
+          bukaPopupBentuk(mapRef.current!, sh);
+        });
         poly.addTo(l.shapes);
       } else if (latlngs.length >= 2) {
         const line = L.polyline(latlngs, {
@@ -160,7 +316,14 @@ export default function MapCanvas() {
           weight: terpilih ? 4 : 2.5,
           dashArray: sh.kind === "open" ? "8 6" : undefined,
         });
-        line.on("click", () => bukaPopupBentuk(mapRef.current!, sh));
+        line.on("click", () => {
+          if (useGis.getState().tool === "select") {
+            klikFiturBarusan = true;
+            useGis.getState().toggleSelect(sh.id);
+            return;
+          }
+          bukaPopupBentuk(mapRef.current!, sh);
+        });
         line.addTo(l.shapes);
       }
     }

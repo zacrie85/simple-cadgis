@@ -75,6 +75,7 @@ interface GisStore {
   setSelection: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
+  deleteSelected: () => { titik: number; bentuk: number };
 
   setDialog: <K extends keyof DialogState>(key: K, value: DialogState[K]) => void;
   setTableFilter: (shapeId: string | null) => void;
@@ -147,7 +148,9 @@ export const useGis = create<GisStore>((set, get) => ({
       set({ measurePoints: pts, measureTotal: total });
       return;
     }
-    // mode select: klik area kosong → bersihkan seleksi
+    // alat blok & zoom kotak ditangani interaksi drag di MapCanvas, bukan klik
+    if (tool === "select" || tool === "zoombox") return;
+    // tanpa alat: klik area kosong → bersihkan seleksi
     set({ selection: [] });
   },
 
@@ -234,6 +237,21 @@ export const useGis = create<GisStore>((set, get) => ({
         : [...st.selection, id],
     })),
   clearSelection: () => set({ selection: [] }),
+
+  deleteSelected: () => {
+    const s = get();
+    const terpilih = new Set(s.selection);
+    if (terpilih.size === 0) return { titik: 0, bentuk: 0 };
+    const titik = s.points.filter((p) => terpilih.has(p.id)).length;
+    const bentuk = s.shapes.filter((sh) => terpilih.has(sh.id)).length;
+    set({
+      points: s.points.filter((p) => !terpilih.has(p.id)),
+      shapes: s.shapes.filter((sh) => !terpilih.has(sh.id)),
+      labels: s.labels.filter((l) => !terpilih.has(l.id)),
+      selection: [],
+    });
+    return { titik, bentuk };
+  },
 
   setDialog: (key, value) =>
     set((st) => ({ dialogs: { ...st.dialogs, [key]: value } })),

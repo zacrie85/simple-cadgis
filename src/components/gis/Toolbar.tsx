@@ -21,6 +21,9 @@ import {
   Maximize2,
   Sparkles,
   FileSpreadsheet,
+  BoxSelect,
+  Trash2,
+  Crop,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -31,6 +34,8 @@ interface ItemGrup {
   onClick: () => void;
   active?: boolean;
   title?: string;
+  disabled?: boolean;
+  bahaya?: boolean; // gaya merah untuk aksi destruktif
 }
 
 interface Grup {
@@ -56,6 +61,16 @@ export default function Toolbar() {
     });
   };
 
+  const jumlahTerpilih = s.selection.length;
+
+  const hapusTerpilih = () => {
+    if (jumlahTerpilih === 0) return;
+    const { titik, bentuk } = s.deleteSelected();
+    toast.success(`${titik} titik + ${bentuk} poligon/garis dihapus`, {
+      description: "Semua data yang diblok/terpilih telah dihapus dari peta & tabel.",
+    });
+  };
+
   const grups: Grup[] = [
     {
       nama: "Berkas",
@@ -72,6 +87,29 @@ export default function Toolbar() {
         { label: "Poligon", icon: Hexagon, title: "Poligon tertutup (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-closed"), active: s.tool === "poly-closed" },
         { label: "Garis", icon: Minus, title: "Poligon/garis terbuka (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-open"), active: s.tool === "poly-open" },
         { label: "Teks", icon: Type, title: "Tambah label teks (klik peta)", onClick: () => setTool("text"), active: s.tool === "text" },
+      ],
+    },
+    {
+      nama: "Pilih",
+      items: [
+        {
+          label: "Blok",
+          icon: BoxSelect,
+          title: "Blok data — drag kotak di peta untuk memilih titik/poligon (Shift = tambah)",
+          onClick: () => setTool("select"),
+          active: s.tool === "select",
+        },
+        {
+          label: jumlahTerpilih > 0 ? `Hapus (${jumlahTerpilih})` : "Hapus",
+          icon: Trash2,
+          title:
+            jumlahTerpilih > 0
+              ? `Hapus ${jumlahTerpilih} data terpilih (hasil blok)`
+              : "Hapus data terpilih — blok dulu dengan tombol Blok",
+          onClick: hapusTerpilih,
+          disabled: jumlahTerpilih === 0,
+          bahaya: true,
+        },
       ],
     },
     {
@@ -100,6 +138,13 @@ export default function Toolbar() {
     {
       nama: "Navigasi",
       items: [
+        {
+          label: "Zoom Kotak",
+          icon: Crop,
+          title: "Zoom ke area — drag kotak di peta (seperti Zoom Window AutoCAD)",
+          onClick: () => setTool("zoombox"),
+          active: s.tool === "zoombox",
+        },
         { label: "Perbesar", icon: ZoomIn, title: "Perbesar", onClick: () => window.dispatchEvent(new CustomEvent("geokita-zoom", { detail: 1 })) },
         { label: "Perkecil", icon: ZoomOut, title: "Perkecil", onClick: () => window.dispatchEvent(new CustomEvent("geokita-zoom", { detail: -1 })) },
         { label: "Fit Data", icon: Maximize2, title: "Tampilkan semua data", onClick: () => s.fitData() },
@@ -133,17 +178,22 @@ export default function Toolbar() {
                 <button
                   key={item.label}
                   onClick={item.onClick}
+                  disabled={item.disabled}
                   title={item.title ?? item.label}
                   aria-label={item.title ?? item.label}
                   aria-pressed={item.active}
                   className={`flex flex-col items-center justify-center w-[58px] h-[50px] rounded-lg transition-colors ${
-                    item.active
-                      ? "bg-blue-100 text-blue-700 ring-1 ring-blue-300"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-blue-700"
+                    item.disabled
+                      ? "text-slate-300 cursor-not-allowed"
+                      : item.active
+                        ? "bg-blue-100 text-blue-700 ring-1 ring-blue-300"
+                        : item.bahaya && jumlahTerpilih > 0
+                          ? "text-red-600 hover:bg-red-50"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-blue-700"
                   }`}
                 >
                   <item.icon className="h-[18px] w-[18px]" />
-                  <span className="text-[9px] font-medium leading-none mt-1">{item.label}</span>
+                  <span className="text-[9px] font-medium leading-none mt-1 text-center">{item.label}</span>
                 </button>
               ))}
             </div>
