@@ -58,21 +58,40 @@ const tanggalKini = () => {
 type FotoLayout = { id: string; nama: string; src: string; x: number; y: number; w: number; rasio: number };
 
 /** Satu baris item legenda — simbol digambar sesuai jenis data. */
-type LegendaItem = { jenis: "titik" | "poligon" | "garis" | "kontur" | "label"; warna: string; label: string };
+type LegendaItem = {
+  jenis: "titik" | "poligon" | "garis" | "kontur" | "label" | "bulat" | "kotak" | "strip" | "polos";
+  warna: string;
+  label: string;
+};
+
+/** Tulisan tambahan buatan user di dalam legenda. */
+type ItemLegendaKustom = { id: string; teks: string; simbol: "garis" | "kotak" | "bulat" | "polos"; warna: string };
 
 /** Simbol kecil legenda yang meniru penampilan data di peta. */
 function SimbolLegenda({ jenis, warna }: { jenis: LegendaItem["jenis"]; warna: string }) {
-  if (jenis === "titik")
-    return <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-blue-800" style={{ backgroundColor: warna }} />;
-  if (jenis === "poligon")
-    return <span className="inline-block h-3 w-3 shrink-0 rounded-[3px] border-2" style={{ borderColor: warna, backgroundColor: `${warna}26` }} />;
-  if (jenis === "garis" || jenis === "kontur")
+  if (jenis === "titik" || jenis === "bulat")
+    return (
+      <span
+        className="inline-block h-3 w-3 shrink-0 rounded-full border"
+        style={{ backgroundColor: warna, borderColor: "rgba(15,23,42,.4)" }}
+      />
+    );
+  if (jenis === "poligon" || jenis === "kotak")
+    return (
+      <span
+        className="inline-block h-3 w-3 shrink-0 rounded-[3px] border-2"
+        style={{ borderColor: warna, backgroundColor: `${warna}26` }}
+      />
+    );
+  if (jenis === "garis" || jenis === "kontur" || jenis === "strip")
     return <span className="inline-block h-0.5 w-4 shrink-0 rounded-full" style={{ backgroundColor: warna }} />;
-  return (
-    <span className="inline-block w-4 shrink-0 text-center text-[10px] font-black italic leading-none" style={{ color: warna }}>
-      T
-    </span>
-  );
+  if (jenis === "label")
+    return (
+      <span className="inline-block w-4 shrink-0 text-center text-[10px] font-black italic leading-none" style={{ color: warna }}>
+        T
+      </span>
+    );
+  return null; // polos — tulisan tanpa simbol
 }
 
 /** Editor layout cetak (seperti layout ArcGIS/AutoCAD) + simpan PDF via cetak. */
@@ -90,7 +109,7 @@ export default function LayoutView() {
   const [subJudul, setSubJudul] = useState("Skala • Tanggal: " + new Date().toLocaleDateString("id-ID"));
   const [orientasi, setOrientasi] = useState<Orientasi>("lanskap");
   const [lapisan, setLapisan] = useState({ titik: true, bentuk: true, label: true, kontur: true });
-  const [basemapLayout, setBasemapLayout] = useState<"osm" | "sat">(basemap);
+  const [basemapLayout, setBasemapLayout] = useState<"osm" | "sat" | "kosong">(basemap);
   const [mapDiv, setMapDiv] = useState<HTMLDivElement | null>(null);
   const [modeSkala, setModeSkala] = useState<"auto" | "manual">("auto");
   const [skalaInput, setSkalaInput] = useState("1:150");
@@ -106,6 +125,11 @@ export default function LayoutView() {
   const [posLegenda, setPosLegenda] = useState({ x: 16, y: 84 });
   const [fotoList, setFotoList] = useState<FotoLayout[]>([]);
   const [fotoAktifId, setFotoAktifId] = useState<string | null>(null);
+  const [skalaLegenda, setSkalaLegenda] = useState(1);
+  const [legendaKustom, setLegendaKustom] = useState<ItemLegendaKustom[]>([]);
+  const [teksKustom, setTeksKustom] = useState("");
+  const [simbolKustom, setSimbolKustom] = useState<ItemLegendaKustom["simbol"]>("garis");
+  const [warnaKustom, setWarnaKustom] = useState("#e11d48");
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -120,6 +144,8 @@ export default function LayoutView() {
   const seretFotoRef = useRef<string | null>(null);
   const resizeFotoRef = useRef<{ id: string; kiriPx: number; atasPx: number } | null>(null);
   const fileFotoRef = useRef<HTMLInputElement | null>(null);
+  const legendaBoxRef = useRef<HTMLDivElement | null>(null);
+  const resizeLegendaRef = useRef<{ lebarDasar: number } | null>(null);
 
   // ---------- inisialisasi peta layout (menunggu div tersedia) ----------
   useEffect(() => {
@@ -170,12 +196,14 @@ export default function LayoutView() {
     map.eachLayer((l) => {
       if (l instanceof L.TileLayer) map.removeLayer(l);
     });
-    const tile =
-      basemapLayout === "sat"
-        ? L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: ZOOM_TILE_ASLI, maxZoom: ZOOM_MAKS })
-        : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxNativeZoom: ZOOM_TILE_ASLI, maxZoom: ZOOM_MAKS });
-    tile.addTo(map);
-    tile.bringToBack();
+    if (basemapLayout !== "kosong") {
+      const tile =
+        basemapLayout === "sat"
+          ? L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: ZOOM_TILE_ASLI, maxZoom: ZOOM_MAKS })
+          : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxNativeZoom: ZOOM_TILE_ASLI, maxZoom: ZOOM_MAKS });
+      tile.addTo(map);
+      tile.bringToBack();
+    }
   }, [basemapLayout, view, mapDiv]);
 
   // ---------- render lapisan data ----------
@@ -341,6 +369,11 @@ export default function LayoutView() {
       ? { jenis: "label", warna: "#334155", label: `Label (${labels.length.toLocaleString("id-ID")})` }
       : null,
   ].filter(Boolean) as LegendaItem[];
+  // tulisan buatan user digabung di akhir daftar legenda
+  const semuaLegenda: LegendaItem[] = [
+    ...legendaItems,
+    ...legendaKustom.map((k) => ({ jenis: k.simbol, warna: k.warna, label: k.teks }) as LegendaItem),
+  ];
 
   const cetak = () => {
     toast.info("Dialog cetak dibuka", { description: "Pilih 'Save as PDF' untuk menyimpan layout." });
@@ -401,6 +434,46 @@ export default function LayoutView() {
   };
   const seretLegendaSelesai = () => {
     seretLegendaRef.current = false;
+  };
+
+  // ---------- ubah ukuran legenda: preset + seret titik biru di pojok ----------
+  const resizeLegendaMulai = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation(); // jangan ikut menyeret posisi kotak
+    e.preventDefault();
+    const kotak = legendaBoxRef.current;
+    if (!kotak) return;
+    resizeLegendaRef.current = { lebarDasar: kotak.offsetWidth || 1 }; // offsetWidth tak terpengaruh transform
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const resizeLegendaGerak = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const st = resizeLegendaRef.current;
+    const bingkai = bingkaiRef.current;
+    if (!st || !bingkai) return;
+    const r = bingkai.getBoundingClientRect();
+    const pusatX = r.left + (posLegenda.x / 100) * r.width; // pusat kotak tak berubah saat resize
+    const k = Math.min(Math.max((Math.abs(e.clientX - pusatX) * 2) / st.lebarDasar, 0.5), 3);
+    setSkalaLegenda(Math.round(k * 1000) / 1000);
+  };
+  const resizeLegendaSelesai = () => {
+    resizeLegendaRef.current = null;
+  };
+
+  // ---------- tulisan tambahan buatan user di dalam legenda ----------
+  const tambahLegendaKustom = () => {
+    const teks = teksKustom.trim();
+    if (!teks) {
+      toast.error("Tulis dulu isi legendanya", { description: "Contoh: Jalan Utama, Batas Provinsi, Lokasi Sumur." });
+      return;
+    }
+    setLegendaKustom((prev) => [
+      ...prev,
+      { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, teks, simbol: simbolKustom, warna: warnaKustom },
+    ]);
+    setTeksKustom("");
+    toast.success("Tulisan masuk ke legenda", { description: `“${teks}” kini tampil di kotak legenda.` });
+  };
+  const hapusLegendaKustom = (id: string) => {
+    setLegendaKustom((prev) => prev.filter((x) => x.id !== id));
   };
 
   // ---------- foto di sheet layout: tambah / seret / ubah ukuran / hapus ----------
@@ -545,7 +618,7 @@ export default function LayoutView() {
           ref={bingkaiRef}
           className="absolute left-8 right-8 top-[86px] bottom-[70px] border border-slate-400 overflow-hidden rounded-sm"
         >
-          <div ref={setMapDiv} className="w-full h-full" />
+          <div ref={setMapDiv} className="h-full w-full" style={{ backgroundColor: "#ffffff" }} />
           {/* Logo arah utara — gaya/posisi/ukuran dari Panel Layout, bisa diseret */}
           {(() => {
             const gayaAktif = GAYA_UTARA.find((g) => g.id === gayaUtara) ?? GAYA_UTARA[0];
@@ -571,14 +644,15 @@ export default function LayoutView() {
               </div>
             );
           })()}
-          {/* Legenda peta — kotak sudut melengkung, bisa diseret & diedit judulnya */}
-          {legendaAktif && legendaItems.length > 0 && (
+          {/* Legenda peta — kotak sudut melengkung, ukuran/posisi/judul bisa diatur, isi bisa ditambah */}
+          {legendaAktif && semuaLegenda.length > 0 && (
             <div
+              ref={legendaBoxRef}
               className="absolute z-[650] cursor-move select-none touch-none rounded-2xl border border-slate-300 bg-white/95 px-3 pt-1.5 pb-2.5 shadow-lg"
               style={{
                 left: `${posLegenda.x}%`,
                 top: `${posLegenda.y}%`,
-                transform: "translate(-50%, -50%)",
+                transform: `translate(-50%, -50%) scale(${skalaLegenda})`,
               }}
               onPointerDown={seretLegendaMulai}
               onPointerMove={seretLegendaGerak}
@@ -591,21 +665,32 @@ export default function LayoutView() {
                 onChange={(e) => setLegendaJudul(e.target.value)}
                 onPointerDown={(e) => e.stopPropagation()}
                 aria-label="Judul legenda"
-                className="pointer-events-auto w-full min-w-0 rounded border-b border-slate-300 bg-transparent pb-0.5 mb-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-slate-700 outline-none focus:bg-blue-50"
+                className="pointer-events-auto mb-1.5 w-full min-w-0 rounded border-b border-slate-300 bg-transparent pb-0.5 text-center text-[11px] font-bold uppercase tracking-wide text-slate-700 outline-none focus:bg-blue-50"
               />
               <div className={`grid gap-x-4 gap-y-1 ${legendaKolom === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
-                {legendaItems.map((li) => (
-                  <div key={li.jenis} className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-700">
+                {semuaLegenda.map((li, i) => (
+                  <div key={li.jenis + i} className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-700">
                     <SimbolLegenda jenis={li.jenis} warna={li.warna} />
                     {li.label}
                   </div>
                 ))}
               </div>
+              {/* titik biru: seret untuk mengubah ukuran legenda secara bebas */}
+              <div
+                onPointerDown={resizeLegendaMulai}
+                onPointerMove={resizeLegendaGerak}
+                onPointerUp={resizeLegendaSelesai}
+                onPointerCancel={resizeLegendaSelesai}
+                title="Seret untuk mengubah ukuran legenda"
+                className="absolute -bottom-1.5 -right-1.5 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-blue-600 shadow"
+              />
             </div>
           )}
-          <p className="absolute top-1 left-2 text-[8px] text-slate-500 pointer-events-none z-10">
-            © OpenStreetMap / Esri
-          </p>
+          {basemapLayout !== "kosong" && (
+            <p className="absolute top-1 left-2 z-10 text-[8px] text-slate-500 pointer-events-none">
+              © OpenStreetMap / Esri
+            </p>
+          )}
         </div>
 
         {/* Foto-foto yang ditempel ke sheet — bisa diseret & diubah ukurannya */}
@@ -691,19 +776,24 @@ export default function LayoutView() {
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1.5">Basemap layout</p>
                 <div className="flex gap-1.5">
-                  {(["osm", "sat"] as const).map((b) => (
+                  {(["osm", "sat", "kosong"] as const).map((b) => (
                     <button
                       key={b}
                       onClick={() => setBasemapLayout(b)}
                       aria-pressed={basemapLayout === b}
-                      className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-medium uppercase ${
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-medium ${
                         basemapLayout === b ? "bg-blue-600 text-white" : "bg-slate-100 hover:bg-slate-200"
                       }`}
                     >
-                      {b === "osm" ? "OSM" : "Satelit"}
+                      {b === "osm" ? "OSM" : b === "sat" ? "Satelit" : "Putih"}
                     </button>
                   ))}
                 </div>
+                {basemapLayout === "kosong" && (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Tanpa peta dasar — latar putih polos, hanya data (titik/poligon/kontur/label) yang tampil.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -794,12 +884,12 @@ export default function LayoutView() {
                 {legendaAktif && (
                   <>
                     <p className="text-[10px] text-slate-400 mb-1.5">
-                      Item otomatis mengikuti data yang ditampilkan ({legendaItems.length} item). Klik judul legenda
-                      di peta untuk mengganti teksnya.
+                      {legendaItems.length} item otomatis dari data + {legendaKustom.length} tulisanmu. Klik judul
+                      legenda di peta untuk mengganti teksnya.
                     </p>
-                    {legendaItems.length === 0 && (
+                    {legendaItems.length === 0 && legendaKustom.length === 0 && (
                       <p className="text-[10px] text-amber-600 mb-1.5">
-                        Belum ada data di peta — tambahkan titik/poligon/kontur dulu agar legenda terisi.
+                        Legenda masih kosong — tambahkan data di peta atau tulis item sendiri di bawah.
                       </p>
                     )}
                     <div className="flex gap-1.5">
@@ -816,6 +906,93 @@ export default function LayoutView() {
                         </button>
                       ))}
                     </div>
+
+                    <p className="text-xs font-semibold text-slate-500 mt-2.5 mb-1">Ukuran legenda</p>
+                    <div className="flex gap-1.5">
+                      {(
+                        [
+                          ["Kecil", 0.8],
+                          ["Sedang", 1],
+                          ["Besar", 1.3],
+                        ] as const
+                      ).map(([label, v]) => (
+                        <button
+                          key={label}
+                          onClick={() => setSkalaLegenda(v)}
+                          aria-pressed={Math.abs(skalaLegenda - v) < 0.01}
+                          className={`flex-1 rounded-lg px-2 py-1 text-xs font-medium ${
+                            Math.abs(skalaLegenda - v) < 0.01
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 hover:bg-slate-200"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <p className="text-xs font-semibold text-slate-500 mt-2.5 mb-1">Tambah tulisan ke legenda</p>
+                    <div className="flex gap-1">
+                      <input
+                        value={teksKustom}
+                        onChange={(e) => setTeksKustom(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") tambahLegendaKustom();
+                        }}
+                        placeholder="Contoh: Jalan Utama"
+                        aria-label="Isi tulisan legenda"
+                        className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <select
+                        value={simbolKustom}
+                        onChange={(e) => setSimbolKustom(e.target.value as ItemLegendaKustom["simbol"])}
+                        aria-label="Bentuk simbol"
+                        title="Bentuk simbol di samping tulisan"
+                        className="rounded-lg border border-slate-300 bg-white px-1 py-1.5 text-[10px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="garis">Garis</option>
+                        <option value="kotak">Kotak</option>
+                        <option value="bulat">Bulat</option>
+                        <option value="polos">Teks</option>
+                      </select>
+                      <input
+                        type="color"
+                        value={warnaKustom}
+                        onChange={(e) => setWarnaKustom(e.target.value)}
+                        aria-label="Warna simbol"
+                        title="Warna simbol"
+                        className="h-8 w-8 shrink-0 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+                      />
+                    </div>
+                    <button
+                      onClick={tambahLegendaKustom}
+                      className="mt-1.5 w-full rounded-lg bg-blue-600 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      + Masukkan ke legenda
+                    </button>
+                    {legendaKustom.length > 0 && (
+                      <div className="mt-1.5 space-y-1">
+                        {legendaKustom.map((k) => (
+                          <div
+                            key={k.id}
+                            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-1.5 py-1"
+                          >
+                            <SimbolLegenda jenis={k.simbol} warna={k.warna} />
+                            <span className="min-w-0 flex-1 truncate text-[10px] text-slate-600" title={k.teks}>
+                              {k.teks}
+                            </span>
+                            <button
+                              onClick={() => hapusLegendaKustom(k.id)}
+                              title="Hapus tulisan ini"
+                              className="text-slate-400 hover:text-red-600"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <p className="text-xs font-semibold text-slate-500 mt-2.5 mb-1.5">Posisi legenda</p>
                     <div className="grid grid-cols-4 gap-1.5">
                       {(
@@ -843,7 +1020,7 @@ export default function LayoutView() {
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1.5 flex items-start gap-1">
                       <Move className="h-3 w-3 shrink-0 mt-0.5" />
-                      Kotak legenda (sudut melengkung) juga bisa diseret bebas di atas peta.
+                      Kotak legenda bisa diseret bebas di peta; titik biru di pojok kanan-bawah untuk ukuran bebas.
                     </p>
                   </>
                 )}

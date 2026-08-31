@@ -204,3 +204,22 @@ Work Log:
 Stage Summary:
 - Layout kini bisa dibuka dalam kondisi apa pun (data kosong maupun terisi) tanpa crash; peta kosong menampilkan wilayah awal Semarang dan skala tetap terhitung.
 - Artefak uji: download/uji-layout-tanpa-data.png.
+
+---
+Task ID: 12
+Agent: Super Z (main agent)
+Task: Tiga upgrade menu Layout — (1) basemap opsi "Putih" tanpa peta dasar, (2) ukuran legenda diatur manual, (3) tambah tulisan sendiri ke dalam legenda (permintaan user setelah Task 11).
+
+Work Log:
+- Basemap "Putih": state basemapLayout diperluas "osm"|"sat"|"kosong"; efek tile hanya menambah TileLayer bila bukan kosong; div peta diberi backgroundColor #ffffff (menimpa .leaflet-container abu default); atribusi "© OpenStreetMap / Esri" disembunyikan saat kosong; panel 3 tombol OSM/Satelit/Putih + teks penjelasan; data (titik/poligon/garis/kontur/label), bar skala Leaflet, dan logo utara tetap tampil — cocok untuk peta skematik.
+- Ukuran legenda manual: state skalaLegenda (default 1, clamp 0.5-3) diterapkan via transform translate(-50%,-50%) scale(k) (pusat kotak tetap saat resize); preset Kecil 0.8/Sedang 1/Besar 1.3 di panel + titik biru handle di pojok kanan-bawah kotak legenda — resizeLegendaMulai menyimpan offsetWidth (lebar layout tanpa transform), gerak menghitung k = |pointerX - pusatX|×2 / lebarDasar; stopPropagation agar tidak bentrok drag posisi.
+- Tulisan kustom legenda: ItemLegendaKustom {teks, simbol: garis|kotak|bulat|polos, warna}; SimbolLegenda diperluas (bulat/kotak/strip/polos, border titik digeneralisasi rgba); semuaLegenda = item otomatis + kustom; form panel (input teks + Enter, select bentuk simbol, input color, tombol "+ Masukkan ke legenda", toast sukses/error); list tulisan dengan tombol hapus X per item; legenda kini tampil bila ada item otomatis ATAU kustom; pesan info panel "n item otomatis + m tulisanmu".
+- Kendala verifikasi (bukan bug): agent-browser fill pada <select> jatuh ke input teks yang masih fokus (teks jadi "Jalan UtamaGaris") → diulang pakai perintah select @ref yang benar; drag handle legenda pertama gagal karena handle di y=765 di luar viewport 576 → viewport diperbesar 1500x1000.
+- Verifikasi Agent Browser end-to-end (demo 25 titik + 2 poligon): Putih → tile tersisa 0, latar peta layout rgb(255,255,255), atribusi hilang, data tetap ada; preset Besar legenda → scale(1.3) lebar visual 185→241px; drag titik biru → scale mencapai clamp 3 (555px), kembali Sedang; tambah "Jalan Utama" garis merah → masuk legenda urutan ke-4 & list panel; tambah "Batas Provinsi" kotak & "Citra tahun 2024" polos → 6 item total; hapus via X panel → item hilang dari legenda; nol error console/server; lint bersih.
+- Screenshot: download/uji-basemap-putih.png, download/uji-layout-putih-legenda.png (legenda 2 kolom dgn tulisan kustom + titik biru ukuran).
+
+Stage Summary:
+- Basemap layout kini punya 3 opsi: OSM, Satelit, Putih (latar kosong untuk peta skema).
+- Legenda bisa diperbesar/diperkecil manual: 3 preset atau seret titik biru di pojok kotak (0.5-3x, pusat terkunci).
+- User bisa menulis item legenda sendiri (teks + bentuk simbol garis/kotak/bulat/teks + warna), dikelola dari panel (tambah/hapus), digabung rapi setelah item otomatis.
+- Artefak uji: download/uji-basemap-putih.png, download/uji-layout-putih-legenda.png.
