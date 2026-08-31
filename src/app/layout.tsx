@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
+import { Toaster } from "@/components/ui/sonner";
+import SwRegister from "@/components/gis/sw-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,13 +16,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Produkta — Atur Harimu, Capai Lebih",
+  title: "GeoKita — GIS Web: Peta, Kontur, Cut & Fill, Ekspor SHP/KMZ",
   description:
-    "Aplikasi produktivitas all-in-one: kelola tugas, bangun kebiasaan baik, dan simpan catatan penting dalam satu tempat. Gratis dan mudah digunakan.",
-  keywords: ["produktivitas", "todo list", "habit tracker", "catatan", "aplikasi tugas"],
-  authors: [{ name: "Produkta" }],
+    "Aplikasi pemetaan web bergaya ArcGIS/AutoCAD/Surfer: peta OSM & satelit, impor Excel/KML/KMZ hingga 250MB, gambar titik-poligon-teks, ukur jarak, kontur interval bebas, 3D, cut & fill, ekspor KMZ/Excel/SHP, dan layout cetak. Bisa di-install di PC.",
+  manifest: "./manifest.json",
   icons: {
-    icon: "/logo.svg",
+    icon: "./icons/icon-192.png",
+    apple: "./icons/icon-192.png",
   },
 };
 
@@ -38,10 +40,11 @@ export default function RootLayout({
   return (
     <html lang="id" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground min-h-screen flex flex-col`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground overflow-hidden`}
       >
         {children}
-        <Toaster />
+        <Toaster richColors position="top-center" expand={false} />
+        <SwRegister />
       </body>
     </html>
   );
