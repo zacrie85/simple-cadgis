@@ -16,18 +16,21 @@ let klikFiturBarusan = false;
 // Mode drag terakhir: Shift/Ctrl ditekan saat mulai drag = tambah ke pilihan
 let dragTambah = false;
 
+/** Kumpulan layer Leaflet milik peta utama (diisi sekali saat init). */
+type LayerMap = {
+  osm: L.TileLayer;
+  sat: L.TileLayer;
+  points: L.LayerGroup;
+  shapes: L.LayerGroup;
+  labels: L.LayerGroup;
+  contours: L.LayerGroup;
+  temp: L.LayerGroup;
+};
+
 export default function MapCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const layerRef = useRef<{
-    osm?: L.TileLayer;
-    sat?: L.TileLayer;
-    points: L.LayerGroup;
-    shapes: L.LayerGroup;
-    labels: L.LayerGroup;
-    contours: L.LayerGroup;
-    temp: L.LayerGroup;
-  } | null>(null);
+  const layerRef = useRef<LayerMap | null>(null);
 
   const points = useGis((s) => s.points);
   const shapes = useGis((s) => s.shapes);
@@ -215,7 +218,7 @@ export default function MapCanvas() {
       cukupJauh = true;
       const bounds = L.latLngBounds(awal, e.latlng);
       if (!kotak) {
-        kotak = L.rectangle(bounds, { ...gaya, interactive: false, keyboard: false });
+        kotak = L.rectangle(bounds, { ...gaya, interactive: false });
         kotak.addTo(l.temp);
       } else {
         kotak.setBounds(bounds);
@@ -340,7 +343,7 @@ export default function MapCanvas() {
         html: `<div class="geokita-label">${escapeHtml(lb.text)}</div>`,
         iconSize: undefined,
       });
-      const m = L.marker([lb.lat, lb.lng], { icon, keyboard: false });
+      const m = L.marker([lb.lat, lb.lng], { icon });
       m.on("click", () => {
         useGis.getState().setDialog("text", { lat: lb.lat, lng: lb.lng, editId: lb.id });
       });
@@ -454,7 +457,7 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function bukaPopupTitik(map: L.Map, p: GisPoint, l: NonNullable<typeof layerRef.current>) {
+function bukaPopupTitik(map: L.Map, p: GisPoint, l: LayerMap) {
   const el = document.createElement("div");
   el.className = "space-y-1.5 min-w-[200px]";
   const attrsHtml = Object.entries(p.attrs)

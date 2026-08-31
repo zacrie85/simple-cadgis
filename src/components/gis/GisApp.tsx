@@ -15,7 +15,7 @@ const MapCanvas = dynamic(() => import("./MapCanvas"), { ssr: false });
 const LayoutView = dynamic(() => import("./LayoutView"), { ssr: false });
 
 /**
- * GeoKita — aplikasi GIS web satu-panel-atas.
+ * SIMPLE CADGIS — aplikasi GIS web satu-panel-atas.
  * Semua tombol berada di toolbar atas; area di bawahnya sepenuhnya peta/layout.
  */
 export default function GisApp() {

@@ -25,7 +25,7 @@ export function dataContoh(): { points: GisPoint[]; shapes: GisShape[] } {
         title: `ST-${i * 5 + j + 1}`,
         description: `Stak elevasi contoh ${i * 5 + j + 1}`,
         elevation: Math.round(elev * 10) / 10,
-        attrs: { Sumber: "Contoh GeoKita" },
+        attrs: { Sumber: "Contoh SIMPLE CADGIS" },
         source: "manual",
         visible: true,
       });

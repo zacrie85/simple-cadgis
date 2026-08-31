@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Generator file uji GeoKita:
+Generator file uji SIMPLE CADGIS:
 1. samples/uji-header-excel.xlsx — XLSX minimal dengan URUTAN ENTRI ZIP ALA EXCEL
    (xl/worksheets/sheet1.xml ditulis SEBELUM xl/sharedStrings.xml) dan semua
    sel teks (header + data) disimpan sebagai shared strings. Ini mereplikasi

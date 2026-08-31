@@ -1,4 +1,4 @@
-/** Tipe data inti GeoKita */
+/** Tipe data inti SIMPLE CADGIS */
 
 export interface LatLng {
   lat: number;

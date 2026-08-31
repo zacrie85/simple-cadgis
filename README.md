@@ -1,6 +1,6 @@
-# GeoKita 🗺️ — GIS Web Sederhana (ArcGIS + AutoCAD + Surfer ringkas)
+# SIMPLE CADGIS 🗺️ — GIS Web & Desktop Sederhana (ArcGIS + AutoCAD + Surfer ringkas)
 
-Aplikasi pemetaan berbasis web **100% client-side** dengan seluruh tombol di **satu panel atas** (tanpa panel samping/bawah). Peta memenuhi layar.
+Aplikasi pemetaan **100% client-side** dengan seluruh tombol di **satu panel atas** (tanpa panel samping/bawah). Peta memenuhi layar. Tersedia 2 cara pakai di PC: **installer Windows (.exe)** dan **PWA** (install dari browser).
 
 ![Teknologi](https://img.shields.io/badge/Next.js%2016-React%2019-blue) ![Peta](https://img.shields.io/badge/Leaflet-OSM%20%2B%20Satelit-green)
 
@@ -18,7 +18,7 @@ Aplikasi pemetaan berbasis web **100% client-side** dengan seluruh tombol di **s
 | **3D** | Visualisasi kontur + permukaan (surface) 3 dimensi yang bisa diputar/zoom (three.js). |
 | **Volume** | **Cut & Fill** dan **Overburden** (m³) di dalam poligon vs elevasi rencana/seam — hasil bisa disimpan ke deskripsi poligon. |
 | **Ekspor** | Titik / Polygon-Garis / Tabel → **KMZ, Excel, SHP (.zip berisi .shp+.shx+.dbf+.prj)** — pilih *semua* atau *terpilih saja*. |
-| **Layout** | Editor layout cetak ala ArcGIS: judul, bingkai, panah utara, skala, legenda, pilih data yang ditampilkan, orientasi A4 lanskap/potret → **Cetak / Simpan PDF**. |
+| **Layout** | Editor layout cetak ala ArcGIS: judul, bingkai, panah utara (4 gaya), skala cetak 1:n, basemap OSM/Satelit/Putih, **legenda** (ukuran manual + tulisan kustom sendiri), **foto** di dalam layout, orientasi A4 lanskap/potret → **Cetak / Simpan PDF**. |
 | **Peta** | Basemap **OpenStreetMap ↔ Satelit (Esri World Imagery)** bergantian satu klik. |
 | **Demo** | Tombol *Demo* memuat 25 titik elevasi + poligon contoh untuk langsung mencoba Kontur, 3D, dan Volume. |
 
@@ -45,7 +45,15 @@ npx serve out    # tes hasil build secara lokal
    ```
 3. Workflow `.github/workflows/deploy.yml` sudah disediakan — setiap push ke `main` akan otomatis mem-build dan men-deploy ke **GitHub Pages** (aktifkan *Settings → Pages → Source: GitHub Actions*).
 
-## 💻 Install di PC (PWA)
+## 💻 Install di PC — Installer Windows (.exe)
+
+1. Buka halaman **Releases** repo ini (kanan → *Releases*).
+2. Download **SIMPLE-CADGIS-Setup-1.0.0.exe**.
+3. Jalankan → pilih folder tujuan → **Next**. Shortcut **SIMPLE CADGIS** otomatis muncul di desktop.
+
+> Installer dibangun otomatis oleh GitHub Actions setiap ada tag baru (mis. `v1.0.0`) — lihat `.github/workflows/build-desktop.yml`. Membangun sendiri secara lokal: `bun install && bun run build && bun run dist:win`.
+
+## 🌐 Install di PC — PWA (lewat browser)
 
 Setelah aplikasi online (GitHub Pages / hosting lain):
 - **Chrome/Edge desktop**: klik ikon **install (⬇)** di address bar → aplikasi terpasang seperti software biasa.
@@ -53,7 +61,7 @@ Setelah aplikasi online (GitHub Pages / hosting lain):
 
 ## 🧰 Teknologi
 
-Next.js 16 (static export) · React 19 · TypeScript · Tailwind CSS 4 · Leaflet (OSM + Esri Satellite) · fflate (streaming unzip/zip) · Web Worker (parser streaming XLSX/KML/KMZ) · d3-contour (marching squares) + IDW · three.js (3D) · SheetJS (Excel) · Penulis Shapefile bawaan (SHP/SHX/DBF/PRJ).
+Next.js 16 (static export) · React 19 · TypeScript · Tailwind CSS 4 · Leaflet (OSM + Esri Satellite) · fflate (streaming unzip/zip) · Web Worker (parser streaming XLSX/KML/KMZ) · d3-contour (marching squares) + IDW · three.js (3D) · SheetJS (Excel) · Penulis Shapefile bawaan (SHP/SHX/DBF/PRJ) · **Electron + electron-builder (installer Windows)**.
 
 ## ⚠️ Catatan
 

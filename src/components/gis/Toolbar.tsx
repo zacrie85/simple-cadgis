@@ -164,7 +164,7 @@ export default function Toolbar() {
       <div className="flex items-stretch gap-0 overflow-x-auto scrollbar-halus px-2">
         {/* Logo */}
         <div className="flex flex-col items-center justify-center px-3 border-r border-slate-200 mr-1 shrink-0">
-          <span className="text-base font-extrabold tracking-tight text-blue-700 leading-none">GeoKita</span>
+          <span className="text-base font-extrabold tracking-tight text-blue-700 leading-none">SIMPLE CADGIS</span>
           <span className="text-[9px] text-slate-400 leading-none mt-0.5">GIS Web</span>
         </div>
 

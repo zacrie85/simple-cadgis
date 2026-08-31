@@ -1,7 +1,11 @@
 /** Util unduh file dari memori. */
 
-export function unduhBlob(data: BlobPart, namaFile: string, mime = "application/octet-stream") {
-  const blob = new Blob([data], { type: mime });
+// Uint8Array<ArrayBufferLike> dari pustaka zip (fflate) belum masuk tipe
+// BlobPart pada TypeScript 5.9 — jadi terima keduanya lalu amankan lewat cast.
+export type DataUnduh = BlobPart | Uint8Array;
+
+export function unduhBlob(data: DataUnduh, namaFile: string, mime = "application/octet-stream") {
+  const blob = new Blob([data as BlobPart], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

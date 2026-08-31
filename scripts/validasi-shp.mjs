@@ -1,4 +1,4 @@
-/* Validasi round-trip penulis Shapefile GeoKita (offset benar) */
+/* Validasi round-trip penulis Shapefile SIMPLE CADGIS (offset benar) */
 import { unzipSync, strFromU8 } from "fflate";
 
 const mod = await import("../src/lib/gis/shapefile.ts");

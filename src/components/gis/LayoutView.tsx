@@ -745,7 +745,7 @@ export default function LayoutView() {
 
         {/* Kaki layout */}
         <div className="absolute bottom-4 left-0 right-0 px-10 flex justify-between text-[10px] text-slate-500">
-          <span>Dibuat dengan GeoKita</span>
+          <span>Dibuat dengan SIMPLE CADGIS</span>
           <span>Proyeksi: WGS 84 (EPSG:4326)</span>
         </div>
       </div>

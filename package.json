@@ -1,13 +1,19 @@
 {
-  "name": "geokita",
-  "version": "0.2.1",
+  "name": "simple-cadgis",
+  "version": "1.0.0",
   "private": true,
+  "description": "SIMPLE CADGIS — aplikasi GIS web: peta, kontur, cut & fill, ekspor SHP/KMZ/Excel, layout cetak. Bisa dipasang di PC (Windows).",
+  "author": "zacrie85",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "next build",
     "start": "npx serve out",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "electron:dev": "electron .",
+    "dist:win": "electron-builder --win nsis"
   },
+  "trustedDependencies": ["electron"],
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
@@ -90,6 +96,8 @@
     "eslint-config-next": "^16.1.1",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
   }
 }

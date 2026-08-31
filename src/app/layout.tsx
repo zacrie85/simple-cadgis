@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GeoKita — GIS Web: Peta, Kontur, Cut & Fill, Ekspor SHP/KMZ",
+  title: "SIMPLE CADGIS — GIS Web: Peta, Kontur, Cut & Fill, Ekspor SHP/KMZ",
   description:
     "Aplikasi pemetaan web bergaya ArcGIS/AutoCAD/Surfer: peta OSM & satelit, impor Excel/KML/KMZ hingga 250MB, gambar titik-poligon-teks, ukur jarak, kontur interval bebas, 3D, cut & fill, ekspor KMZ/Excel/SHP, dan layout cetak. Bisa di-install di PC.",
   manifest: "./manifest.json",

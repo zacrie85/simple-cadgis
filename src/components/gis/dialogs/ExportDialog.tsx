@@ -61,14 +61,14 @@ export default function ExportDialog() {
           return;
         }
         if (format === "kmz") {
-          const kml = bangunKML({ points: pilih, namaDokumen: "Ekspor Titik GeoKita" });
-          unduhBlob(kmlKeKmz(kml, "titik"), `GeoKita-Titik-${ts}.kmz`, "application/vnd.google-earth.kmz");
+          const kml = bangunKML({ points: pilih, namaDokumen: "Ekspor Titik SIMPLE CADGIS" });
+          unduhBlob(kmlKeKmz(kml, "titik"), `SIMPLE-CADGIS-Titik-${ts}.kmz`, "application/vnd.google-earth.kmz");
         } else if (format === "xlsx") {
-          await excelZip({ points: pilih }, `GeoKita-Titik-${ts}.xlsx`);
+          await excelZip({ points: pilih }, `SIMPLE-CADGIS-Titik-${ts}.xlsx`);
         } else {
           unduhBlob(
-            shapefileZip({ nama: `GeoKita-Titik-${ts}`, points: pilih.map((p) => ({ p, attrs: p.attrs })) }),
-            `GeoKita-Titik-${ts}.zip`
+            shapefileZip({ nama: `SIMPLE-CADGIS-Titik-${ts}`, points: pilih.map((p) => ({ p, attrs: p.attrs })) }),
+            `SIMPLE-CADGIS-Titik-${ts}.zip`
           );
         }
         toast.success(`${pilih.length.toLocaleString("id-ID")} titik diekspor ke ${format.toUpperCase()}`);
@@ -81,14 +81,14 @@ export default function ExportDialog() {
           return;
         }
         if (format === "kmz") {
-          const kml = bangunKML({ shapes: bentuk, namaDokumen: "Ekspor Poligon GeoKita" });
-          unduhBlob(kmlKeKmz(kml, "bentuk"), `GeoKita-Poligon-${ts}.kmz`, "application/vnd.google-earth.kmz");
+          const kml = bangunKML({ shapes: bentuk, namaDokumen: "Ekspor Poligon SIMPLE CADGIS" });
+          unduhBlob(kmlKeKmz(kml, "bentuk"), `SIMPLE-CADGIS-Poligon-${ts}.kmz`, "application/vnd.google-earth.kmz");
         } else if (format === "xlsx") {
-          await excelZip({ shapes: bentuk }, `GeoKita-Poligon-${ts}.xlsx`);
+          await excelZip({ shapes: bentuk }, `SIMPLE-CADGIS-Poligon-${ts}.xlsx`);
         } else {
           unduhBlob(
-            shapefileZip({ nama: `GeoKita-Poligon-${ts}`, shapes: bentuk.map((s) => ({ s, attrs: s.attrs })) }),
-            `GeoKita-Poligon-${ts}.zip`
+            shapefileZip({ nama: `SIMPLE-CADGIS-Poligon-${ts}`, shapes: bentuk.map((s) => ({ s, attrs: s.attrs })) }),
+            `SIMPLE-CADGIS-Poligon-${ts}.zip`
           );
         }
         toast.success(`${bentuk.length.toLocaleString("id-ID")} poligon/garis diekspor ke ${format.toUpperCase()}`);
@@ -102,24 +102,24 @@ export default function ExportDialog() {
           ...pilih.map((p) => ["Titik", p.title, p.description, `${p.lat}, ${p.lng}`, p.elevation ?? "", ...Object.keys(header.slice(5)).map((k) => p.attrs[k] ?? "")] as (string | number)[]),
           ...bentuk.map((s) => ["Garis/Poligon", s.title, s.description, `${s.vertices.length} titik`, "", ...Object.keys(header.slice(5)).map((k) => s.attrs[k] ?? "")] as (string | number)[]),
         ];
-        await excelTabel(header, baris, `GeoKita-Tabel-${ts}.xlsx`, "Atribut");
+        await excelTabel(header, baris, `SIMPLE-CADGIS-Tabel-${ts}.xlsx`, "Atribut");
         toast.success("Tabel diekspor ke Excel");
       } else if (format === "kmz") {
-        const kml = bangunKML({ points: pilih, shapes: bentuk, contours, namaDokumen: "Ekspor Tabel GeoKita" });
+        const kml = bangunKML({ points: pilih, shapes: bentuk, contours, namaDokumen: "Ekspor Tabel SIMPLE CADGIS" });
         if (format === "kmz" && kmlString(kml).length === 0) throw new Error("Kosong");
-        unduhBlob(kmlKeKmz(kml, "tabel"), `GeoKita-Tabel-${ts}.kmz`, "application/vnd.google-earth.kmz");
+        unduhBlob(kmlKeKmz(kml, "tabel"), `SIMPLE-CADGIS-Tabel-${ts}.kmz`, "application/vnd.google-earth.kmz");
         toast.success("Tabel diekspor ke KMZ");
       } else {
         if (pilih.length > 0) {
           unduhBlob(
-            shapefileZip({ nama: `GeoKita-Tabel-Titik-${ts}`, points: pilih.map((p) => ({ p, attrs: p.attrs })) }),
-            `GeoKita-Tabel-Titik-${ts}.zip`
+            shapefileZip({ nama: `SIMPLE-CADGIS-Tabel-Titik-${ts}`, points: pilih.map((p) => ({ p, attrs: p.attrs })) }),
+            `SIMPLE-CADGIS-Tabel-Titik-${ts}.zip`
           );
           toast.success("Tabel (titik) diekspor ke SHP");
         } else if (bentuk.length > 0) {
           unduhBlob(
-            shapefileZip({ nama: `GeoKita-Tabel-Bentuk-${ts}`, shapes: bentuk.map((s) => ({ s, attrs: s.attrs })) }),
-            `GeoKita-Tabel-Bentuk-${ts}.zip`
+            shapefileZip({ nama: `SIMPLE-CADGIS-Tabel-Bentuk-${ts}`, shapes: bentuk.map((s) => ({ s, attrs: s.attrs })) }),
+            `SIMPLE-CADGIS-Tabel-Bentuk-${ts}.zip`
           );
           toast.success("Tabel (poligon/garis) diekspor ke SHP");
         } else {

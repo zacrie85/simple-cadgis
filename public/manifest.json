@@ -1,6 +1,6 @@
 {
-  "name": "GeoKita — GIS Web Sederhana",
-  "short_name": "GeoKita",
+  "name": "SIMPLE CADGIS — GIS Web Sederhana",
+  "short_name": "SIMPLE CADGIS",
   "description": "Aplikasi pemetaan web: peta OSM & satelit, impor Excel/KML/KMZ, gambar titik & poligon, kontur, cut & fill, ekspor KMZ/Excel/SHP, dan layout cetak.",
   "start_url": "./",
   "display": "standalone",

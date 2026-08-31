@@ -1,5 +1,5 @@
 /**
- * Web Worker parsing streaming GeoKita.
+ * Web Worker parsing streaming SIMPLE CADGIS.
  * Membaca Excel (xlsx), CSV, KML, KMZ secara TERPECAH-PECAH (chunk)
  * agar UI tidak pernah hang, sekalipun file 250MB.
  * Hasil dikirim bertahap (batch) ke thread utama.
@@ -8,7 +8,7 @@
 type Masuk = { type: "parse"; file: File };
 
 import { Unzip, UnzipInflate } from "fflate";
-type ZipFileCb = Parameters<ConstructorParameters<typeof Unzip>[0]>[0];
+type ZipFileCb = Parameters<NonNullable<ConstructorParameters<typeof Unzip>[0]>>[0];
 
 export type PesanKeluar =
   | { type: "progress"; bytes: number; total: number; rows?: number; features?: number }

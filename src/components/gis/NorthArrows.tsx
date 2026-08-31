@@ -149,7 +149,7 @@ export function UtaraPanah({ className }: { className?: string }) {
   );
 }
 
-/** Gaya 4 — Klasik: panah teks sederhana (tampilan bawaan GeoKita sebelumnya). */
+/** Gaya 4 — Klasik: panah teks sederhana (tampilan bawaan SIMPLE CADGIS sebelumnya). */
 export function UtaraKlasik({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 40 58" className={className} role="img" aria-label="Logo utara klasik">
