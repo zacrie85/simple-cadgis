@@ -38,6 +38,7 @@ export interface DialogState {
   layer: boolean;
   simpan: boolean;
   muat: boolean;
+  bersih: boolean;
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -109,6 +110,9 @@ interface GisStore {
     layer: number;
   };
 
+  /** Kosongkan SELURUH data pekerjaan (dipakai menu Bersihkan; selalu lewat konfirmasi). */
+  kosongkanSemua: () => { titik: number; bentuk: number; label: number; kontur: number; layer: number };
+
   setMapView: (v: { lat: number; lng: number; zoom: number }) => void;
 
   setSelection: (ids: string[]) => void;
@@ -135,6 +139,7 @@ const DIALOG_AWAL: DialogState = {
   layer: false,
   simpan: false,
   muat: false,
+  bersih: false,
   point: null,
   text: null,
   shapeInfo: null,
@@ -405,6 +410,33 @@ export const useGis = create<GisStore>((set, get) => ({
   },
 
   setMapView: (v) => set({ mapView: v }),
+
+  kosongkanSemua: () => {
+    const st = get();
+    const hit = {
+      titik: st.points.length,
+      bentuk: st.shapes.length,
+      label: st.labels.length,
+      kontur: st.contours.length,
+      layer: st.layers.length,
+    };
+    set({
+      points: [],
+      shapes: [],
+      labels: [],
+      contours: [],
+      layers: [],
+      selection: [],
+      tableShapeFilter: null,
+      editBentukId: null,
+      tool: null,
+      pendingVertices: [],
+      pendingShapeSave: null,
+      measurePoints: [],
+      measureTotal: 0,
+    });
+    return hit;
+  },
 
   setSelection: (ids) => set({ selection: ids }),
   toggleSelect: (id) =>

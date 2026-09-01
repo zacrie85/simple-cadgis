@@ -119,6 +119,15 @@ export default function Toolbar() {
         { label: "Simpan", icon: Save, title: "Simpan proyek ke file .cadgis.json (semua data + layer)", onClick: () => s.setDialog("simpan", true), active: s.dialogs.simpan },
         { label: "Muat", icon: FolderOpen, title: "Muat proyek dari file .cadgis.json (ganti semua / gabungkan)", onClick: () => s.setDialog("muat", true), active: s.dialogs.muat },
         { label: "Layer", icon: Layers, title: "Panel layer — tampil/sembunyikan per layer, ganti nama, zoom, hapus", onClick: () => s.setDialog("layer", true), active: s.dialogs.layer },
+        {
+          label: "Bersihkan",
+          icon: Trash2,
+          title: "Kosongkan semua data (titik, poligon/garis, label, kontur, layer) — konfirmasi dulu sebelum hapus",
+          onClick: () => s.setDialog("bersih", true),
+          active: s.dialogs.bersih,
+          bahaya: true,
+          disabled: s.points.length + s.shapes.length + s.labels.length + s.contours.length === 0,
+        },
       ],
     },
     {
@@ -251,7 +260,7 @@ export default function Toolbar() {
                       ? "text-slate-300 cursor-not-allowed"
                       : item.active
                         ? "bg-blue-100 text-blue-700 ring-1 ring-blue-300"
-                        : item.bahaya && jumlahTerpilih > 0
+                        : item.bahaya
                           ? "text-red-600 hover:bg-red-50"
                           : "text-slate-600 hover:bg-slate-100 hover:text-blue-700"
                   }`}

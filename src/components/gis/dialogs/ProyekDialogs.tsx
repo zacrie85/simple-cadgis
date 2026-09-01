@@ -166,6 +166,62 @@ export function MuatProyekDialog() {
   );
 }
 
+// ================= Dialog Bersihkan Semua =================
+
+export function BersihkanDialog() {
+  const open = useGis((s) => s.dialogs.bersih);
+  const setDialog = useGis((s) => s.setDialog);
+  const kosongkanSemua = useGis((s) => s.kosongkanSemua);
+  const points = useGis((s) => s.points);
+  const shapes = useGis((s) => s.shapes);
+  const labels = useGis((s) => s.labels);
+  const contours = useGis((s) => s.contours);
+  const layers = useGis((s) => s.layers);
+
+  if (!open) return null;
+
+  const tutup = () => setDialog("bersih", false);
+
+  const bersihkan = () => {
+    const h = kosongkanSemua();
+    hapusSesi(); // buang cadangan sesi otomatis agar tidak muncul tawaran pulihkan
+    tutup();
+    toast.success("Semua data dibersihkan", {
+      description: `${h.titik.toLocaleString("id-ID")} titik, ${h.bentuk.toLocaleString("id-ID")} poligon/garis, ${h.label.toLocaleString("id-ID")} label, ${h.kontur} kontur, ${h.layer} layer dihapus. Aplikasi siap untuk proyek baru.`,
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && tutup()}>
+      <DialogContent className="rounded-2xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5 text-red-600" /> Bersihkan Semua Data?
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-slate-500 -mt-1">
+          Seluruh pekerjaan akan dihapus dari aplikasi. Bila masih diperlukan, simpan dulu lewat menu <b>Simpan</b>.
+        </p>
+        <div className="text-xs text-slate-700 bg-red-50 border border-red-100 rounded-lg p-3 space-y-0.5">
+          <p>• {points.length.toLocaleString("id-ID")} titik • {shapes.length.toLocaleString("id-ID")} poligon/garis • {labels.length.toLocaleString("id-ID")} label</p>
+          <p>• {contours.length} layer kontur • {layers.length} layer data</p>
+          <p>• hasil ukur sementara &amp; seleksi blok</p>
+          <p>• sesi otomatis tersimpan di browser ini</p>
+        </div>
+        <p className="text-[11px] text-slate-400">
+          Basemap &amp; posisi peta tidak berubah. Tindakan ini tidak bisa dibatalkan.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" onClick={tutup}>Batal</Button>
+          <Button onClick={bersihkan} className="bg-red-600 hover:bg-red-700 text-white">
+            <Trash2 className="h-4 w-4" /> Ya, Hapus Semua
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ================= Sesi otomatis & pulihkan =================
 
 /** Pasang autosave: setiap perubahan data disimpan ke localStorage (debounce 1,5 detik). */

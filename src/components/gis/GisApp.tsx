@@ -15,6 +15,7 @@ import {
   SimpanProyekDialog,
   MuatProyekDialog,
   SesiPulihkanDialog,
+  BersihkanDialog,
   useSesiOtomatis,
 } from "./dialogs/ProyekDialogs";
 
@@ -50,6 +51,7 @@ export default function GisApp() {
         <LayerPanel />
         <SimpanProyekDialog />
         <MuatProyekDialog />
+        <BersihkanDialog />
         <SesiPulihkanDialog />
       </div>
     </div>

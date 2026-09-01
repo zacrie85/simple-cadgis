@@ -424,3 +424,19 @@ Work Log:
 
 Stage Summary:
 - Layout kini bisa disimpan jadi PDF (langsung unduh, isi lengkap tak kosong) DAN PNG resolusi 2× A4. Tombol Cetak klasik tetap tersedia dengan hasil cetak yang diperbaiki. Belum di-push — menyusul rilis v1.3.0 bersama fitur proyek/layer & perbaikan toolbar (menunggu PAT user).
+
+---
+Task ID: 21
+Agent: Super Z (main agent)
+Task: Permintaan user — menu untuk membersihkan (hapus) semua data di aplikasi yang sudah tidak dipakai.
+
+Work Log:
+- store.ts: aksi baru kosongkanSemua() → hapus points/shapes/labels/contours/layers + seleksi + filter tabel + editBentukId + alat aktif + pending gambar + hasil ukur; kembalikan ringkasan jumlah per jenis; basemap & posisi peta tidak diubah. DialogState + flag "bersih".
+- Toolbar grup Berkas: tombol "Bersihkan" (ikon Trash2) — disabled bila tidak ada data sama sekali; gaya bahaya (merah) diperbaiki: kini merah saat tombol aktif (sebelumnya terikat jumlahTerpilih sehingga Hapus tak berubah perilaku karena memang disabled saat 0 terpilih).
+- ProyekDialogs.tsx: BersihkanDialog baru — konfirmasi wajib dengan ringkasan jumlah titik/poligon/garis/label/kontur/layer + peringatan "tidak bisa dibatalkan" + saran simpan dulu; saat konfirmasi: kosongkanSemua() + hapusSesi() (localStorage) + toast ringkasan.
+- GisApp.tsx: pasang <BersihkanDialog />.
+- Verifikasi browser end-to-end (1366×768): Demo dimuat (25 titik + 2 bentuk + 1 layer) → tombol merah aktif → dialog tampil ringkasan benar → Batal: data utuh & dialog tutup → konfirmasi: seluruh elemen peta hilang (0 leaflet-interactive), tombol kembali disabled, localStorage sesi null, toast "25 titik, 2 poligon/garis, ... dihapus" → reload: TIDAK ada tawaran pulihkan sesi, aplikasi bersih. Nol error console; tsc + lint + build produksi bersih.
+- Screenshot: download/dialog-bersihkan.png.
+
+Stage Summary:
+- Menu Bersihkan (grup Berkas) siap: satu klik untuk mengosongkan seluruh aplikasi dengan konfirmasi aman + sesi otomatis ikut terbuang. Belum di-push — menyusul rilis v1.3.0 (menunggu PAT user).
