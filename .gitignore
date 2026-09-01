@@ -55,3 +55,6 @@ server.log
 # desktop build output
 dist-desktop/
 tool-results/
+download/*.xlsx
+download/*.kmz
+download/*.shp
