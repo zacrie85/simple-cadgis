@@ -472,3 +472,20 @@ Work Log:
 
 Stage Summary:
 - Impor Excel/CSV/KML/KMZ kini tahan file 30rb+ baris (batas desain 300rb baris / 50rb fitur). Bom-waktu dialog Kontur & 3D dengan data besar ikut dipadamkan. Commit a23a1e8 — belum di-push, menyusul rilis v1.3.1 (menunggu konfirmasi user / token).
+
+---
+Task ID: 23
+Agent: Super Z (main agent)
+Task: Permintaan user — opsi pengambilan elevasi DEM manual (Sekarang/Nanti) saat impor + optimasi kontur agar lancar untuk data besar (30rb titik).
+
+Work Log:
+- ImportDialog: checkbox DEM diganti pilihan radio "Sekarang" (otomatis setelah impor) / "Nanti" (lewat menu Analisis → Elevasi DEM). Default pintar: >5.000 baris → "Nanti" otomatis terpilih; peringatan estimasi jumlah permintaan jaringan bila "Sekarang" dipilih utk data besar. Toast hasil impor "Nanti" membawa tombol aksi "Buka" yang langsung membuka ElevasiDialog.
+- Kontur → Web Worker baru (src/workers/kontur-worker.ts): IDW + d3-contour + penyederhanaan berjalan di latar belakang; dialog menampilkan progress bar % bertahap + tombol Batalkan (terminate worker). Grid hasil dikirim balik (zero-copy transfer) → simpanGridCache() → 3D & Volume tetap berfungsi.
+- Optimasi algoritme worker: IDW ber-bucket spasial (bucket 64x64, tetangga 5x5, perluasan radius utk area sepi) — cap sampel naik 2500 → 8000 dan grid 170 → 220 (kualitas kontur naik, biaya tetap kecil); Douglas-Peucker iteratif (aman stack) per ring, toleransi 0.65 sel grid + dedup titik kembar → verteks turun drastis.
+- MapCanvas render kontur: L.canvas renderer (bukan SVG) + label permanen dibatasi ≤80 (dulu tiap garis ke-2 → ratusan tooltip DOM).
+- ElevasiDialog: teks hasil kini membedakan "gagal" vs "belum diproses karena dibatalkan".
+- contours.ts dirampingkan: komputasi pindah ke worker; kini hanya cache grid + warna + label (d3-contour tak lagi masuk bundle utama).
+- Uji end-to-end (agent-browser, 30rb titik): file tanpa elevasi → "Nanti" otomatis terpilih → impor tanpa unduh DEM + toast tombol Buka → ElevasiDialog manual (Isi 30.000 Titik) progres jalan (600/30.000, 2%) → Batal → teks "belum diproses karena dibatalkan". File dengan elevasi → Buat Kontur: SELESAI ±2,8 detik total, UI responsif selama komputasi (eval jalan mulus), 35 garis + label 0–120 m rapi, 3D terbuka normal (grid worker kompatibel). Console bersih (hanya HTTP 429 Open-Meteo saat uji batal — normal, ada retry). Lint + tsc + build produksi bersih. Screenshot: download/kontur-30k.png.
+
+Stage Summary:
+- Data 30rb+ titik kini nyaman: impor cepat tanpa DEM paksa, elevasi bisa manual dengan progres/batal, kontur dihitung worker latar 2–3 detik tanpa membekukan aplikasi. Commit 6576f7e — belum di-push (menyusul rilis v1.3.1 bersama perbaikan stack-overflow Task 22).
