@@ -523,3 +523,17 @@ Work Log:
 Stage Summary:
 - RILIS v1.3.1 SELESAI: web (Pages) & installer Windows v1.3.1 berisi 3 penyempurnaan — impor tahan 30rb+ baris, elevasi DEM Sekarang/Nanti + kontur worker latar belakang, dan cakupan elevasi hanya titik terpilih (Blok/Tabel Data).
 - Token ghp_* user dipakai push; sarankan cabut/rotasi (Settings → Developer settings → Personal access tokens).
+
+---
+Task ID: 25
+Agent: Super Z (main agent)
+Task: Laporan user — aplikasi di GitHub Pages (zacrie85.github.io/simple-cadgis) tidak bisa dipakai.
+
+Work Log:
+- Diagnosa: index HTML 200 tapi semua chunk diminta dari root `/_next/*` → 404 (situs di sub-path /simple-cadgis). Akar masalah: basePath di next.config.ts masih komentar — situs Pages SEBENARNYA tak pernah berfungsi sejak deploy pertama (verifikasi lama hanya cek HTTP 200 halaman).
+- Perbaikan: next.config.ts basePath KONDISIONAL dari env BASE_PATH (undefined bila tak diisi); deploy.yml mengeset BASE_PATH=/simple-cadgis pada langkah build. Build desktop (build-desktop.yml, tanpa env) & dev lokal tetap root — tak terpengaruh. Kode aplikasi sudah aman sebelumnya: manifest/sw/icon/prefetch pakai path relatif ("./").
+- Uji lokal: build BASE_PATH → chunk /simple-cadgis/_next/* 200 + simulasi struktur Pages (python http.server, folder pages-sim/simple-cadgis) → app termuat, Demo jalan, 18 tile peta, nol error console; rebuild tanpa env → chunk tetap /_next/* root (regresi desktop aman); tsc bersih.
+- Push 25b5a1b → workflow "Deploy ke GitHub Pages" success → verifikasi LIVE: chunk /simple-cadgis/_next/* 200, buka https://zacrie85.github.io/simple-cadgis/ di browser — app jalan, Demo termuat, tile peta tampil, nol error console. Screenshot: tool-results/pages-live-ok.png.
+
+Stage Summary:
+- GitHub Pages kini BENAR-BENAR berfungsi (perbaikan hotfix langsung ke main, tanpa tag baru — installer desktop tidak berubah; v1.3.2 opsional bila user ingin penanda versi). Token ghp_* user dipakai lagi utk push; tetap disarankan dicabut setelah sesi.
