@@ -407,3 +407,20 @@ Work Log:
 
 Stage Summary:
 - Semua menu toolbar kini SELALU terlihat & bisa diakses di lebar layar apa pun (ribbon 2 baris otomatis). Belum di-push — menyusul bersama rilis v1.3.0 (menunggu PAT user).
+
+---
+Task ID: 20
+Agent: Super Z (main agent)
+Task: Laporan user — layout tidak bisa disimpan PDF (hasil kosong) + permintaan tambahan ekspor PNG.
+
+Work Log:
+- Diagnosis PDF kosong: tombol lama hanya window.print(); sheet berada di dalam kontainer h-screen overflow-hidden + overflow-auto sehingga saat dicetak terklip → halaman blank; @page juga tanpa margin:0.
+- Solusi utama (anti-kosong, tanpa dialog): render sheetRef via html2canvas-pro (fork pendukung oklch/color-mix Tailwind 4; html2canvas klasik error "unsupported color function oklch") scale 2 (≈192 DPI, 2246×1588 px) dengan useCORS (tile OSM/Esri diunduh ulang berkors) + onclone: input judul/sub-judul/legenda diganti div setara (html2canvas tak bisa menggambar teks <input>) + buang shadow/border.
+- Simpan PDF: jsPDF A4 lanskap/potret sesuai orientasi, addImage PNG full-page, compress, nama file dari judul (sanitize) → unduh langsung peta-kerja-geokita.pdf. Simpan PNG: canvas.toBlob → unduh .png. Tombol baru di Panel Layout: "Simpan PDF" (biru), "Simpan PNG" (hijau), "Cetak (dialog printer)" (outline) + state Merender…/disabled selama ekspor.
+- Tombol Cetak tetap ada & CSS print dibetulkan: @page margin:0, body * visibility:hidden, .layout-sheet position:fixed left/top 0 (lolos clipping kontainer) + warna exact → cetak browser kini juga tidak kosong lagi.
+- Bundle: html2canvas-pro & jspdf dimuat dynamic import saat tombol diklik (initial bundle tak bertambah).
+- Verifikasi browser end-to-end (agent-browser, data Demo, 1366×768): PNG 2246×1588 px 4,3 MB — analisis piksel 70,4% non-putih, 586 warna unik, pratinjau visual: judul/sub-judul/peta OSM/titik demo/legenda/utara/skala bar/footer semua tampil; PDF 2,8 MB magic %PDF-, 1 halaman, MediaBox [0 0 841.89 595.28] = A4 lanskap presisi; interceptor URL.createObjectURL dipakai untuk menguji blob jsPDF (FileSaver memakai dispatchEvent bukan a.click). Nol error console; lint bersih; build produksi sukses.
+- Screenshot/preview: download/layout-uji-awal.png, download/layout-ekspor-png-preview.jpg.
+
+Stage Summary:
+- Layout kini bisa disimpan jadi PDF (langsung unduh, isi lengkap tak kosong) DAN PNG resolusi 2× A4. Tombol Cetak klasik tetap tersedia dengan hasil cetak yang diperbaiki. Belum di-push — menyusul rilis v1.3.0 bersama fitur proyek/layer & perbaikan toolbar (menunggu PAT user).

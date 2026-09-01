@@ -6,7 +6,7 @@ import { useGis } from "@/lib/gis/store";
 import { FloatingWindow } from "./Chips";
 import { warnaElevasi } from "@/lib/gis/contours";
 import { GAYA_UTARA, type GayaUtaraId } from "./NorthArrows";
-import { Printer, Move, RotateCcw, ImagePlus, X } from "lucide-react";
+import { Printer, Move, RotateCcw, ImagePlus, X, FileDown, ImageDown } from "lucide-react";
 import { toast } from "sonner";
 
 type Orientasi = "lanskap" | "potret";
@@ -130,6 +130,7 @@ export default function LayoutView() {
   const [teksKustom, setTeksKustom] = useState("");
   const [simbolKustom, setSimbolKustom] = useState<ItemLegendaKustom["simbol"]>("garis");
   const [warnaKustom, setWarnaKustom] = useState("#e11d48");
+  const [ekspor, setEkspor] = useState<"pdf" | "png" | null>(null);
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -380,6 +381,102 @@ export default function LayoutView() {
     setTimeout(() => window.print(), 250);
   };
 
+  // ---------- ekspor sheet → gambar → PDF/PNG (tanpa dialog cetak, anti-kosong) ----------
+  const namaFileBersih = () =>
+    judul
+      .trim()
+      .replace(/[^\w\- ]+/g, "")
+      .replace(/\s+/g, "-")
+      .toLowerCase() || "layout";
+
+  /** Render sheet layout menjadi canvas 2× (≈192 DPI). html2canvas-pro dipakai karena
+   *  mendukung warna oklch/color-mix dari Tailwind 4 (html2canvas klasik error). */
+  const tangkapSheet = async (): Promise<HTMLCanvasElement> => {
+    const sheet = sheetRef.current;
+    if (!sheet) throw new Error("Sheet layout tidak ditemukan");
+    mapRef.current?.invalidateSize(); // pastikan ukuran peta terkini sebelum dirender
+    const html2canvas = (await import("html2canvas-pro")).default;
+    return html2canvas(sheet, {
+      scale: 2,
+      useCORS: true, // tile OSM/Esri diunduh ulang dengan CORS agar tidak kosong
+      backgroundColor: "#ffffff",
+      logging: false,
+      onclone: (doc: Document) => {
+        // html2canvas tidak bisa menggambar teks di dalam <input> — ganti dengan <div> setara
+        doc.querySelectorAll(".layout-sheet input").forEach((el) => {
+          const inp = el as HTMLInputElement;
+          const div = doc.createElement("div");
+          div.className = inp.className;
+          div.textContent = inp.value;
+          div.style.display = "flex";
+          div.style.alignItems = "center";
+          div.style.justifyContent = "center";
+          inp.replaceWith(div);
+        });
+        const sh = doc.querySelector(".layout-sheet") as HTMLElement | null;
+        if (sh) {
+          sh.style.boxShadow = "none";
+          sh.style.border = "0";
+        }
+      },
+    });
+  };
+
+  const unduhBlob = (blob: Blob, nama: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nama;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  const simpanPdf = async () => {
+    if (ekspor) return;
+    setEkspor("pdf");
+    try {
+      const canvas = await tangkapSheet();
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF({
+        orientation: orientasi === "lanskap" ? "landscape" : "portrait",
+        unit: "mm",
+        format: "a4",
+        compress: true,
+      });
+      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, 210, 297);
+      pdf.save(`${namaFileBersih()}.pdf`);
+      toast.success("PDF tersimpan", {
+        description: `${namaFileBersih()}.pdf — A4 ${orientasi}, peta + legenda + utara ikut semua.`,
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error("Gagal membuat PDF", { description: String((e as Error)?.message ?? e) });
+    } finally {
+      setEkspor(null);
+    }
+  };
+
+  const simpanPng = async () => {
+    if (ekspor) return;
+    setEkspor("png");
+    try {
+      const canvas = await tangkapSheet();
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/png"));
+      if (!blob) throw new Error("Gagal mengonversi canvas ke PNG");
+      unduhBlob(blob, `${namaFileBersih()}.png`);
+      toast.success("PNG tersimpan", {
+        description: `${namaFileBersih()}.png — resolusi ${canvas.width}×${canvas.height} px (2× A4).`,
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error("Gagal membuat PNG", { description: String((e as Error)?.message ?? e) });
+    } finally {
+      setEkspor(null);
+    }
+  };
+
   const pilihPreset = (s: number) => {
     pernahKetikRef.current = true;
     setSkalaInput(`1:${s}`);
@@ -583,8 +680,26 @@ export default function LayoutView() {
   return (
     <div className="relative flex-1 overflow-auto bg-slate-200 flex items-start justify-center p-6 print:bg-white print:p-0">
       <style>{`
-        @media print { @page { size: A4 ${orientasi === "lanskap" ? "landscape" : "portrait"}; } }
-        @media print { .layout-sheet, .layout-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        @media print {
+          @page { size: A4 ${orientasi === "lanskap" ? "landscape" : "portrait"}; margin: 0; }
+          html, body { height: auto !important; overflow: visible !important; }
+          /* Sembunyikan SELURUH aplikasi, tampilkan hanya sheet layout di pojok kiri-atas halaman —
+             position:fixed lolos dari kontainer overflow-hidden/overflow-auto yang bikin hasil cetak kosong */
+          body * { visibility: hidden !important; }
+          .layout-sheet, .layout-sheet * {
+            visibility: visible !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .layout-sheet {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+            box-shadow: none !important;
+          }
+        }
       `}</style>
       <div
         ref={sheetRef}
@@ -1203,11 +1318,28 @@ export default function LayoutView() {
 
               <div className="pt-1 space-y-1.5">
                 <button
+                  onClick={simpanPdf}
+                  disabled={!!ekspor}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 text-white py-2 text-xs font-semibold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <FileDown className="h-4 w-4" />
+                  {ekspor === "pdf" ? "Merender PDF…" : "Simpan PDF"}
+                </button>
+                <button
+                  onClick={simpanPng}
+                  disabled={!!ekspor}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-white py-2 text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <ImageDown className="h-4 w-4" />
+                  {ekspor === "png" ? "Merender PNG…" : "Simpan PNG"}
+                </button>
+                <button
                   onClick={cetak}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 text-white py-2 text-xs font-semibold hover:bg-blue-700"
+                  disabled={!!ekspor}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 text-slate-700 py-2 text-xs font-semibold hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Printer className="h-4 w-4" />
-                  Cetak / Simpan PDF
+                  Cetak (dialog printer)
                 </button>
                 <p className="text-[10px] text-slate-400 flex items-start gap-1">
                   <Move className="h-3 w-3 shrink-0 mt-0.5" />
@@ -1219,7 +1351,7 @@ export default function LayoutView() {
                 </p>
                 <p className="text-[10px] text-slate-400 flex items-start gap-1">
                   <Printer className="h-3 w-3 shrink-0 mt-0.5" />
-                  Saat mencetak, pilih skala kertas 100% (Actual size) agar skala peta tepat.
+                  Via Cetak: pilih skala kertas 100% (Actual size) agar skala peta tepat.
                 </p>
               </div>
             </div>
