@@ -440,3 +440,20 @@ Work Log:
 
 Stage Summary:
 - Menu Bersihkan (grup Berkas) siap: satu klik untuk mengosongkan seluruh aplikasi dengan konfirmasi aman + sesi otomatis ikut terbuang. Belum di-push — menyusul rilis v1.3.0 (menunggu PAT user).
+
+---
+Task ID: 21-lanjutan (rilis v1.3.0)
+Agent: Super Z (main agent)
+Task: Eksekusi push & rilis v1.3.0 dengan token dari user (via GitHub CLI — user kesulitan sudo mode web).
+
+Work Log:
+- User gagal buat PAT lewat web (GitHub "Sudo authentication failed", "Verify via email" juga gagal) → pandu jalur alternatif GitHub CLI: winget install GitHub.cli → gh auth login (device flow, tanpa sudo mode) → gh auth token → dapat gho_***.
+- Singkirkan commit asing buatan sandbox (9313ca3, isi screenshot upload user, pesan UUID) dari riwayat lokal via git rebase --onto, lalu tag v1.3.0 dibuat ulang di commit bersih.
+- Naikkan versi package.json 1.2.0 → 1.3.0 (commit fde9886) + tag beranotasi v1.3.0 (4 fitur: proyek & layer, toolbar ribbon, layout PDF/PNG, bersihkan semua data).
+- Validasi token via API (HTTP 200, user zacrie85) → push main + tag v1.3.0 sukses (27d2d55..fde9886).
+- Pantau CI: "Deploy ke GitHub Pages" (main) → success; "Build Installer Desktop (Windows)" (run #6, v1.3.0) → success.
+- Verifikasi akhir: Release "SIMPLE CADGIS v1.3.0" terpublikasi + aset SIMPLE-CADGIS-Setup-1.3.0.exe (±188 MB); Pages https://zacrie85.github.io/simple-cadgis/ HTTP 200.
+
+Stage Summary:
+- RILIS v1.3.0 SELESAI: web (Pages) & installer Windows v1.3.0 di Releases berisi Simpan/Muat proyek + Panel Layer + sesi otomatis, toolbar ribbon 2 baris, layout PDF/PNG, dan menu Bersihkan Semua Data.
+- Token gho_*** dari gh CLI sudah dipakai push; disarankan user cabut/rotasi (Authorized OAuth Apps → GitHub CLI).
