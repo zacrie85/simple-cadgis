@@ -339,3 +339,20 @@ Work Log:
 Stage Summary:
 - Elevasi otomatis aktif di 3 jalur: impor Excel (opsi otomatis), titik manual (diam-diam + toast), tombol Analisis → Elevasi DEM (progres + batal). Hanya mengisi yang kosong — data survei tidak pernah ditimpa. Sumber Copernicus DEM GLO-90 via Open-Meteo, gratis tanpa key, batch 100 titik/request dengan retry & pembatalan.
 - Belum di-commit/push — menunggu arahan user (push tag vX.Y.Z akan otomatis membangun installer baru & deploy Pages).
+
+---
+Task ID: 18
+Agent: Super Z (main agent)
+Task: Rilis v1.2.0 — konfirmasi user bahwa Task 16 (tabel semua kolom) & Task 17 (elevasi DEM) berhasil + kontur bekerja baik → siapkan push & rilis.
+
+Work Log:
+- Verifikasi status git: 2 commit lokal berisi seluruh perubahan Task 16 & 17 (commit otomatis berpesan UUID), origin/main tertinggal 2 commit.
+- Rapikan riwayat: git reset --soft ke 057215c (worklog Task 15) → buat 2 commit bersih per topik:
+  - 6ebe0fc "tabel: tampilkan SEMUA kolom hasil impor (tanpa batas 11 kolom) + ekspor ikut semua kolom"
+  - 75e1981 "elevasi: isi otomatis elevasi DEM (Copernicus via Open-Meteo) untuk titik impor & manual"
+- Naikkan versi package.json 1.1.0 → 1.2.0 (commit e717d94) + buat tag beranotasi v1.2.0.
+- Percobaan push gagal: "could not read Username" — sesuai protokol rilis sebelumnya, PAT GitHub user tidak pernah disimpan di file/repo/environment demi keamanan; push menunggu PAT baru dari user (alur sama seperti rilis v1.0.0 & v1.1.0).
+
+Stage Summary:
+- Semua SIAP rilis: main = 3 commit di depan origin (tabel + elevasi + bump v1.2.0), tag v1.2.0 sudah dibuat lokal.
+- Menunggu PAT dari user → push origin main v1.2.0 → CI otomatis: Pages ter-update + installer SIMPLE-CADGIS-Setup-1.2.0.exe dibangun ke Releases.
