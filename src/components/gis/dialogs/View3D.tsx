@@ -23,7 +23,9 @@ export default function View3D() {
   const info =
     pathsInfo.length === 0
       ? "Belum ada kontur. Buat kontur dulu lewat menu Kontur."
-      : `${pathsInfo.length} garis kontur • elevasi ${Math.min(...pathsInfo.map((p) => p.elev)).toFixed(1)}–${Math.max(...pathsInfo.map((p) => p.elev)).toFixed(1)} m`;
+      : `Elevasi ${pathsInfo.reduce((m, p) => Math.min(m, p.elev), Infinity).toFixed(1)}–${pathsInfo
+          .reduce((m, p) => Math.max(m, p.elev), -Infinity)
+          .toFixed(1)} m • ${pathsInfo.length} garis kontur`;
 
   useEffect(() => {
     if (!open || !mountEl) return;

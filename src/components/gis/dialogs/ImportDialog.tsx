@@ -163,7 +163,8 @@ export default function ImportDialog() {
     parser.mulai(file, {
       onProgress: (p) => setProgres({ bytes: p.bytes, total: p.total, rows: p.rows, features: p.features }),
       onRows: (rows) => {
-        semuaRowsRef.current.push(...rows);
+        // loop (bukan spread) — aman untuk batch berapa pun besarnya
+        for (const r of rows) semuaRowsRef.current.push(r);
       },
       onFeatures: (points, shapes) => {
         for (const p of points) {

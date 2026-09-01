@@ -54,3 +54,4 @@ server.log
 /skills/
 # desktop build output
 dist-desktop/
+tool-results/

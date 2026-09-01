@@ -132,7 +132,9 @@ async function parseXlsx(file: File) {
         last = siRe.lastIndex;
       }
       if (sisaSst.length >= 1000) {
-        sst.push(...sisaSst);
+        // HINDARI spread (push(...arr)) — argumen fungsi berjumlah puluhan ribu
+        // memicu "Maximum call stack size exceeded" pada file dengan sharedStrings padat.
+        for (const s of sisaSst) sst.push(s);
         sisaSst = [];
       }
       if (last > 0) bufferSst = bufferSst.slice(last);
@@ -149,7 +151,7 @@ async function parseXlsx(file: File) {
   });
   uzSst.push(new Uint8Array(0), true);
   if (sisaSst.length) {
-    sst.push(...sisaSst);
+    for (const s of sisaSst) sst.push(s);
     sisaSst = [];
   }
 

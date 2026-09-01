@@ -81,8 +81,9 @@ export function ContourDialog() {
     }, 50);
   };
 
-  const eMin = titikElev.length ? Math.min(...titikElev.map((t) => t.elev)) : 0;
-  const eMax = titikElev.length ? Math.max(...titikElev.map((t) => t.elev)) : 0;
+  // reduce (bukan Math.min(...arr)) — aman untuk puluhan ribu titik
+  const eMin = titikElev.length ? titikElev.reduce((m, t) => Math.min(m, t.elev), Infinity) : 0;
+  const eMax = titikElev.length ? titikElev.reduce((m, t) => Math.max(m, t.elev), -Infinity) : 0;
 
   return (
     <Dialog open onOpenChange={(v) => !v && tutup()}>

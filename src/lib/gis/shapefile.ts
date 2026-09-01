@@ -71,7 +71,8 @@ function tulisShp(rekam: ShapeRekam[]): Uint8Array {
   le32(u8, 32, rekam.length ? rekam[0].tipe : 0);
   if (rekam.length) {
     const semua: LatLng[] = [];
-    for (const r of rekam) semua.push(...r.points);
+    // loop bertingkat (bukan spread) — aman untuk rekam dengan puluhan ribu verteks
+    for (const r of rekam) for (const p of r.points) semua.push(p);
     const [minX, minY, maxX, maxY] = box(semua);
     le64(u8, 36, minX); le64(u8, 44, minY);
     le64(u8, 52, maxX); le64(u8, 60, maxY);
