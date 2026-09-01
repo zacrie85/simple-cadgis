@@ -489,3 +489,19 @@ Work Log:
 
 Stage Summary:
 - Data 30rb+ titik kini nyaman: impor cepat tanpa DEM paksa, elevasi bisa manual dengan progres/batal, kontur dihitung worker latar 2–3 detik tanpa membekukan aplikasi. Commit 6576f7e — belum di-push (menyusul rilis v1.3.1 bersama perbaikan stack-overflow Task 22).
+
+---
+Task ID: 24
+Agent: Super Z (main agent)
+Task: Permintaan user — opsi ambil elevasi DEM hanya untuk titik yang di-blok/seleksi (bukan semua titik).
+
+Work Log:
+- ElevasiDialog: pilihan cakupan pengisian — radio "Semua titik" vs "Hanya titik terpilih" (hitungan live: N titik di-blok • N belum ada elevasi). Default cerdas tiap dialog DIBUKA: bila ada titik terpilih yang elevasinya kosong → otomatis fokus "Hanya terpilih" (sesuai alur kerja user: blok dulu → buka menu); tanpa seleksi → default "Semua" + radio terpilih disabled + petunjuk cara blok (tombol Blok / centang Tabel Data).
+- Tombol aksi kontekstual: "Isi N Titik Terpilih" / "Isi N Titik" / "Terpilih Sudah Terisi" (disabled) / "Semua Terisi". Radio terkunci saat proses berjalan. Toast hasil membedakan cakupan terpilih ("Hanya titik yang di-blok yang diisi").
+- isiElevasiKosong: daftar id terpilih DIKUNCI (snapshot) saat tombol ditekan — perubahan seleksi di tengah proses tak mengubah target; filter ids kini pakai Set (O(1) per titik, sebelumnya ids.includes O(n) — berat bila puluhan ribu titik diseleksi dari ratusan ribu).
+- Toolbar: tooltip "Elevasi DEM" diperbarui — menyebut opsi HANYA titik di-blok/terpilih.
+- Uji end-to-end (agent-browser, 80 titik grid tanpa elevasi via scripts/buat-uji-grid.mjs → download/uji-grid.xlsx): impor pilih DEM "Nanti" → 80 titik tanpa elevasi → aktifkan Blok → drag kotak (Playwright mouse move/down/up) → "2 fitur terblok" → buka Elevasi DEM: default [X] "Hanya titik terpilih • 2 di-blok" + tombol "Isi 2 Titik Terpilih" → isi → stats 80 total / 2 sudah / 78 belum + "Selesai: 2 titik terisi elevasi" → ganti radio "Semua": tombol jadi "Isi 78 Titik", baris terpilih tampil "2 di-blok • 0 belum ada" → isi 78 → 80/80/0 → tanpa seleksi: default "Semua", radio terpilih DISABLED, hint petunjuk blok muncul. Nol error console (hanya warning a11y DialogContent lama). Lint + tsc + build produksi bersih. Screenshot: tool-results/elev-0{2..5}*.png.
+- Catatan teknis pengujian: file uji harus di public/ agar fetch('/uji-grid.xlsx') valid (download/ tak diserve dev server); percobaan pertama sempat 404 → parser baca 0 baris. public/uji-grid.xlsx dihapus sebelum commit; generator script disimpan di scripts/.
+
+Stage Summary:
+- Menu Analisis → Elevasi DEM kini punya cakupan "Hanya titik terpilih": blok sebagian titik di peta (atau centang Tabel Data) → buka menu → hanya titik blok yang diunduh DEM-nya — hemat kuota/waktu untuk data 30rb+ titik. Commit 411292e — belum di-push (menyusul rilis v1.3.1 bersama Task 22 & 23).
