@@ -356,3 +356,19 @@ Work Log:
 Stage Summary:
 - Semua SIAP rilis: main = 3 commit di depan origin (tabel + elevasi + bump v1.2.0), tag v1.2.0 sudah dibuat lokal.
 - Menunggu PAT dari user → push origin main v1.2.0 → CI otomatis: Pages ter-update + installer SIMPLE-CADGIS-Setup-1.2.0.exe dibangun ke Releases.
+
+---
+Task ID: 18 (lanjutan - selesai)
+Agent: Super Z (main agent)
+Task: Eksekusi push & rilis v1.2.0 dengan PAT dari user.
+
+Work Log:
+- Validasi token via GitHub API (HTTP 200) → push main + tag v1.2.0 sukses (057215c..0a1552d).
+- CI otomatis terpicu & dipantau via API:
+  - "Deploy ke GitHub Pages" (main) → success (website live dengan fitur baru).
+  - "Build Installer Desktop (Windows)" (v1.2.0) → success.
+- Release v1.2.0 terpublikasi: SIMPLE-CADGIS-Setup-1.2.0.exe (182.4 MB) siap diunduh.
+- Token user tidak disimpan ke file/repo/environment manapun; remote git tetap bersih.
+
+Stage Summary:
+- RILIS v1.2.0 SELESAI: tabel semua kolom + elevasi DEM otomatis kini ada di web (Pages) & installer Windows v1.2.0 di Releases.
