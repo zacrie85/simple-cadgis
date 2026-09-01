@@ -108,8 +108,9 @@ export default function ElevasiDialog() {
           {hasil && !jalan && (
             <p className={`rounded-xl px-3 py-2 text-xs ${hasil.gagal === 0 ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
               Selesai: <b>{hasil.diisi.toLocaleString("id-ID")}</b> titik terisi elevasi
-              {hasil.gagal > 0 && <>, <b>{hasil.gagal.toLocaleString("id-ID")}</b> gagal (coba lagi untuk mengulang yang belum)</>}
-              {hasil.dibatalkan && <> — dibatalkan, sisa bisa diulang kapan saja</>}
+              {hasil.dibatalkan
+                ? <> — <b>{hasil.gagal.toLocaleString("id-ID")}</b> titik belum diproses karena dibatalkan (bisa dilanjutkan kapan saja)</>
+                : hasil.gagal > 0 && <>, <b>{hasil.gagal.toLocaleString("id-ID")}</b> gagal (coba lagi untuk mengulang yang belum)</>}
             </p>
           )}
         </div>

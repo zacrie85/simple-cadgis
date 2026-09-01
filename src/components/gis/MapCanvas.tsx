@@ -813,28 +813,38 @@ export default function MapCanvas() {
     const l = layerRef.current;
     if (!l) return;
     l.contours.clearLayers();
+    // renderer canvas: ratusan garis × ribuan verteks tetap enteng (bukan SVG/DOM)
+    const renderer = L.canvas({ padding: 0.3 });
     let eMin = Infinity;
     let eMax = -Infinity;
+    let totalPath = 0;
     for (const layer of contours) {
+      if (!layer.visible) continue;
       for (const p of layer.paths) {
         if (p.elev < eMin) eMin = p.elev;
         if (p.elev > eMax) eMax = p.elev;
       }
+      totalPath += layer.paths.length;
     }
     const rentang = Math.max(eMax - eMin, 1e-6);
+    // label permanen dibatasi agar DOM tidak kebanjiran tooltip saat data besar
+    const langkahLabel = totalPath > 160 ? Math.ceil(totalPath / 80) : 2;
+    let hitung = 0;
     for (const layer of contours) {
       if (!layer.visible) continue;
-      layer.paths.forEach((path, idx) => {
+      layer.paths.forEach((path) => {
+        const i = hitung++;
         const line = L.polyline(
           path.coords.map((c) => [c.lat, c.lng] as [number, number]),
           {
+            renderer,
             color: warnaElevasi((path.elev - eMin) / rentang),
             weight: 1.8,
             opacity: 0.85,
           }
         );
         line.bindTooltip(`${path.elev} m`, {
-          permanent: idx % 2 === 0,
+          permanent: i % langkahLabel === 0,
           direction: "center",
           className: "geokita-contour-label",
         });

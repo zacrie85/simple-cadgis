@@ -45,8 +45,8 @@ export default function ImportDialog() {
   const [kolomLng, setKolomLng] = useState(1);
   const [kolomElev, setKolomElev] = useState(-1);
   const [kolomJudul, setKolomJudul] = useState(-1);
-  // isi elevasi otomatis dari DEM bila file tidak punya kolom elevasi
-  const [isiElevOtomatis, setIsiElevOtomatis] = useState(true);
+  // kolom elevasi & kapan DEM diambil: "sekarang" (otomatis setelah impor) / "nanti" (manual lewat menu Analisis)
+  const [isiElevMode, setIsiElevMode] = useState<"sekarang" | "nanti">("sekarang");
 
   // Tebak apakah baris pertama berupa header (nama kolom) atau sudah data.
   const tebakGunakanHeader = (rows: string[][]): boolean => {
@@ -142,6 +142,7 @@ export default function ImportDialog() {
       setGunakanHeader(true);
       setModeKoordinat("gabungan");
       fiturRef.current = { points: [], shapes: [] };
+      setIsiElevMode("sekarang");
     }, 200);
   }, [setDialog]);
 
@@ -201,6 +202,8 @@ export default function ImportDialog() {
           const gh = tebakGunakanHeader(semuaRowsRef.current);
           setGunakanHeader(gh);
           jalankanDeteksi(gh, semuaRowsRef.current);
+          // default pintar: data besar → DEM diambil manual (nanti) agar impor tak menunggu
+          setIsiElevMode(semuaRowsRef.current.length > 5000 ? "nanti" : "sekarang");
           setFase("peta-kolom");
         } else {
           terapkanFiturKml();
@@ -290,8 +293,8 @@ export default function ImportDialog() {
         toast.success(`${baru.length.toLocaleString("id-ID")} titik ditambahkan ke peta`, {
           description: gagal > 0 ? `${gagal.toLocaleString("id-ID")} baris dilewati (koordinat tidak valid).` : undefined,
         });
-        // elevasi otomatis dari DEM untuk titik tanpa elevasi (proses latar, dialog boleh ditutup)
-        if (isiElevOtomatis && kolomElev < 0) {
+        // elevasi dari DEM bila dipilih "sekarang" (proses latar, dialog boleh ditutup)
+        if (isiElevMode === "sekarang" && kolomElev < 0) {
           const idsKosong = baru.filter((p) => p.elevation == null).map((p) => p.id);
           if (idsKosong.length > 0) {
             const t = toast.loading(`Mengambil elevasi DEM untuk ${idsKosong.length.toLocaleString("id-ID")} titik…`);
@@ -307,6 +310,15 @@ export default function ImportDialog() {
                 toast.dismiss(t);
                 toast.error("Gagal mengambil elevasi DEM", { description: "Periksa koneksi internet. Ulangi lewat menu Analisis → Elevasi DEM." });
               });
+          }
+        } else if (isiElevMode === "nanti" && kolomElev < 0) {
+          const jumlahKosong = baru.filter((p) => p.elevation == null).length;
+          if (jumlahKosong > 0) {
+            toast.info(`${jumlahKosong.toLocaleString("id-ID")} titik belum punya elevasi`, {
+              description: "Ambil elevasi DEM kapan saja lewat menu Analisis → Elevasi DEM (bisa dijeda/dibatalkan).",
+              action: { label: "Buka", onClick: () => useGis.getState().setDialog("elevasi", true) },
+              duration: 12000,
+            });
           }
         }
         fitData();
@@ -526,17 +538,40 @@ export default function ImportDialog() {
                 )}
               </label>
               {kolomElev < 0 && (
-                <label className="sm:col-span-2 flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-900 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isiElevOtomatis}
-                    onChange={(e) => setIsiElevOtomatis(e.target.checked)}
-                    className="mt-0.5 h-4 w-4"
-                  />
-                  <span>
-                    <b>Isi elevasi otomatis dari DEM satelit</b> — ketinggian diambil dari Copernicus DEM (grid ±90 m) untuk semua titik yang tidak punya elevasi. Butuh internet; akurat untuk kontur &amp; pratinjau, bukan pengganti survei presisi.
-                  </span>
-                </label>
+                <div className="sm:col-span-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2.5 text-xs text-blue-900 space-y-2">
+                  <p className="font-medium">Kapan elevasi DEM satelit diambil untuk titik yang kosong?</p>
+                  <div className="space-y-1.5">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="elev-dem"
+                        checked={isiElevMode === "sekarang"}
+                        onChange={() => setIsiElevMode("sekarang")}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        <b>Sekarang</b> — otomatis setelah impor (butuh internet; saran untuk ≤ 5.000 titik)
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="elev-dem"
+                        checked={isiElevMode === "nanti"}
+                        onChange={() => setIsiElevMode("nanti")}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        <b>Nanti</b> — lewat menu <b>Analisis → Elevasi DEM</b> dengan progres &amp; tombol batal (saran untuk data besar)
+                      </span>
+                    </label>
+                  </div>
+                  {isiElevMode === "sekarang" && barisData.length > 5000 && (
+                    <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                      Data {barisData.length.toLocaleString("id-ID")} titik ≈ {Math.ceil(barisData.length / 100).toLocaleString("id-ID")} permintaan jaringan — dipilih “Sekarang”, impor akan menunggu di latar belakang.
+                    </p>
+                  )}
+                </div>
               )}
               <label className="block">
                 <span className="text-xs font-medium text-slate-500">Kolom judul titik (opsional)</span>

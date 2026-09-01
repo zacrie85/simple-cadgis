@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useGis } from "@/lib/gis/store";
-import { hasilkanKontur, type TitikElevasi } from "@/lib/gis/contours";
+import { simpanGridCache, type TitikElevasi } from "@/lib/gis/contours";
 import { hitungVolume } from "@/lib/gis/volumes";
 import { fmtAngka, fmtLuas, uid } from "@/lib/gis/geo";
 import { toast } from "sonner";
@@ -14,7 +14,8 @@ import { Mountain, Loader2, Calculator, Trash2 } from "lucide-react";
 
 const INTERVAL_METER = [1, 3, 5, 7, 10, 30, 50, 70, 100];
 
-/** Dialog pembuatan kontur (otomatis / interval manual) + daftar layer kontur. */
+/** Dialog pembuatan kontur (otomatis / interval manual) + daftar layer kontur.
+ *  Komputasi berat berjalan di Web Worker — aplikasi tetap responsif. */
 export function ContourDialog() {
   const open = useGis((s) => s.dialogs.contour);
   const setDialog = useGis((s) => s.setDialog);
@@ -25,6 +26,8 @@ export function ContourDialog() {
   const [interval, setInterval] = useState<number>(5);
   const [intervalCustom, setIntervalCustom] = useState("");
   const [proses, setProses] = useState(false);
+  const [progres, setProgres] = useState({ persen: 0, tahap: "" });
+  const workerRef = useRef<Worker | null>(null);
 
   const titikElev: TitikElevasi[] = useMemo(
     () =>
@@ -36,7 +39,18 @@ export function ContourDialog() {
 
   if (!open) return null;
 
-  const tutup = () => setDialog("contour", false);
+  const hentikanWorker = () => {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+  };
+
+  const tutup = () => {
+    if (proses) {
+      hentikanWorker();
+      setProses(false);
+    }
+    setDialog("contour", false);
+  };
 
   const buat = () => {
     if (titikElev.length < 3) {
@@ -45,40 +59,70 @@ export function ContourDialog() {
       });
       return;
     }
+    const intervalFinal =
+      mode === "otomatis" ? null : intervalCustom.trim() !== "" ? parseFloat(intervalCustom.replace(",", ".")) : interval;
+    if (mode === "manual" && (!intervalFinal || intervalFinal <= 0)) {
+      toast.error("Interval tidak valid");
+      return;
+    }
+    hentikanWorker();
     setProses(true);
-    setTimeout(() => {
-      try {
-        const intervalFinal =
-          mode === "otomatis" ? null : intervalCustom.trim() !== "" ? parseFloat(intervalCustom.replace(",", ".")) : interval;
-        if (mode === "manual" && (!intervalFinal || intervalFinal <= 0)) {
-          toast.error("Interval tidak valid");
-          setProses(false);
-          return;
-        }
-        const hasil = hasilkanKontur(titikElev, intervalFinal);
-        if (hasil.paths.length === 0) {
-          toast.error("Tidak ada garis kontur terbentuk", { description: "Rentang elevasi terlalu kecil atau titik terlalu berdekatan." });
-          setProses(false);
-          return;
-        }
-        useGis.getState().addContours({
-          id: uid("kontur"),
-          interval: intervalFinal ?? 0,
-          levels: hasil.levels,
-          paths: hasil.paths,
-          createdAt: Date.now(),
-          visible: true,
-        });
-        toast.success(`Kontur dibuat: ${hasil.paths.length} garis`, {
-          description: intervalFinal ? `Interval ${intervalFinal} m • ${hasil.levels.length} level elevasi` : "Mode otomatis (±10 level)",
-        });
-        setProses(false);
-        tutup();
-      } catch (e) {
-        toast.error("Gagal membuat kontur", { description: e instanceof Error ? e.message : String(e) });
-        setProses(false);
+    setProgres({ persen: 0, tahap: "Memulai…" });
+
+    const wk = new Worker(new URL("../../../workers/kontur-worker.ts", import.meta.url));
+    workerRef.current = wk;
+    wk.onmessage = (e: MessageEvent) => {
+      const m = e.data as
+        | { type: "progres"; persen: number; tahap: string }
+        | {
+            type: "hasil";
+            paths: { elev: number; coords: { lat: number; lng: number }[] }[];
+            levels: number[];
+            grid: { minLat: number; maxLat: number; minLng: number; maxLng: number; w: number; h: number; values: Float64Array };
+          }
+        | { type: "error"; message: string };
+      if (m.type === "progres") {
+        setProgres({ persen: m.persen, tahap: m.tahap });
+        return;
       }
-    }, 50);
+      hentikanWorker();
+      if (m.type === "error") {
+        toast.error("Gagal membuat kontur", { description: m.message });
+        setProses(false);
+        return;
+      }
+      // hasil — isi cache grid (dipakai 3D & volume) lalu simpan layer kontur
+      simpanGridCache({
+        bbox: { minLat: m.grid.minLat, maxLat: m.grid.maxLat, minLng: m.grid.minLng, maxLng: m.grid.maxLng },
+        w: m.grid.w,
+        h: m.grid.h,
+        values: m.grid.values,
+      });
+      if (m.paths.length === 0) {
+        toast.error("Tidak ada garis kontur terbentuk", { description: "Rentang elevasi terlalu kecil atau titik terlalu berdekatan." });
+        setProses(false);
+        return;
+      }
+      useGis.getState().addContours({
+        id: uid("kontur"),
+        interval: intervalFinal ?? 0,
+        levels: m.levels,
+        paths: m.paths,
+        createdAt: Date.now(),
+        visible: true,
+      });
+      toast.success(`Kontur dibuat: ${m.paths.length} garis`, {
+        description: intervalFinal ? `Interval ${intervalFinal} m • ${m.levels.length} level elevasi` : "Mode otomatis (±10 level)",
+      });
+      setProses(false);
+      tutup();
+    };
+    wk.onerror = (e) => {
+      hentikanWorker();
+      toast.error("Gagal membuat kontur", { description: e.message || "Worker gagal dimuat." });
+      setProses(false);
+    };
+    wk.postMessage({ type: "hitung", titik: titikElev, interval: intervalFinal });
   };
 
   // reduce (bukan Math.min(...arr)) — aman untuk puluhan ribu titik
@@ -185,9 +229,24 @@ export function ContourDialog() {
           )}
         </div>
 
+        {proses && (
+          <div className="space-y-1.5">
+            <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-blue-600 to-sky-400 transition-all"
+                style={{ width: `${progres.persen}%` }}
+              />
+            </div>
+            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {progres.tahap || "Menghitung…"} {progres.persen}% — dihitung di latar belakang, peta tetap bisa digerakkan
+            </p>
+          </div>
+        )}
+
         <DialogFooter className="gap-2">
           <Button variant="outline" className="rounded-xl" onClick={tutup}>
-            Tutup
+            {proses ? "Batalkan" : "Tutup"}
           </Button>
           <Button className="rounded-xl" onClick={buat} disabled={proses}>
             {proses ? <Loader2 className="h-4 w-4 animate-spin" /> : "Buat Kontur"}
