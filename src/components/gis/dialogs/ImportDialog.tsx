@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useGis } from "@/lib/gis/store";
+import { useGis, namaLayerDariFile } from "@/lib/gis/store";
 import { FloatingWindow } from "../Chips";
 import { ParseStream } from "@/lib/gis/parse-client";
 import { isiElevasiKosong } from "@/lib/gis/elevasi";
@@ -214,10 +214,14 @@ export default function ImportDialog() {
 
   const terapkanFiturKml = () => {
     const st = useGis.getState();
+    // layer baru untuk hasil impor KML/KMZ ini
+    const layerId = st.tambahLayer(namaLayerDariFile(namaFile));
+    fiturRef.current.points = fiturRef.current.points.map((p) => ({ ...p, layerId }));
+    fiturRef.current.shapes = fiturRef.current.shapes.map((sh) => ({ ...sh, layerId }));
     if (fiturRef.current.points.length) st.addPoints(fiturRef.current.points);
     for (const sh of fiturRef.current.shapes) st.addShape(sh);
     toast.success("Impor KML/KMZ berhasil", {
-      description: `${fiturRef.current.points.length} titik + ${fiturRef.current.shapes.length} poligon/garis ditambahkan.`,
+      description: `${fiturRef.current.points.length} titik + ${fiturRef.current.shapes.length} poligon/garis ditambahkan pada layer "${namaLayerDariFile(namaFile)}".`,
     });
     fitData();
     setFase("selesai");
@@ -233,6 +237,9 @@ export default function ImportDialog() {
     let gagal = 0;
 
     const ambil = (row: string[], i: number) => row[i] ?? "";
+
+    // layer baru untuk hasil impor ini (dinamai sesuai nama file)
+    const layerId = st.tambahLayer(namaLayerDariFile(namaFile));
 
     for (const row of semuaRows) {
       let ll: ReturnType<typeof parseKolomKoordinat> = null;
@@ -265,6 +272,7 @@ export default function ImportDialog() {
         attrs,
         source: namaFile.toLowerCase().endsWith(".csv") ? "csv" : "excel",
         visible: true,
+        layerId,
       });
     }
 

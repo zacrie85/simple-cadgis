@@ -10,6 +10,13 @@ import { PointDialog, TextDialog, ShapeInfoDialog } from "./dialogs/FeatureDialo
 import { ContourDialog, VolumeDialog } from "./dialogs/AnalysisDialogs";
 import ElevasiDialog from "./dialogs/ElevasiDialog";
 import View3D from "./dialogs/View3D";
+import LayerPanel from "./dialogs/LayerPanel";
+import {
+  SimpanProyekDialog,
+  MuatProyekDialog,
+  SesiPulihkanDialog,
+  useSesiOtomatis,
+} from "./dialogs/ProyekDialogs";
 
 // Leaflet & three.js hanya jalan di browser — matikan SSR untuk kedua tampilan ini
 const MapCanvas = dynamic(() => import("./MapCanvas"), { ssr: false });
@@ -20,6 +27,8 @@ const LayoutView = dynamic(() => import("./LayoutView"), { ssr: false });
  * Semua tombol berada di toolbar atas; area di bawahnya sepenuhnya peta/layout.
  */
 export default function GisApp() {
+  useSesiOtomatis(); // autosave pekerjaan ke localStorage
+
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
       <Toolbar />
@@ -38,6 +47,10 @@ export default function GisApp() {
         <VolumeDialog />
         <ElevasiDialog />
         <View3D />
+        <LayerPanel />
+        <SimpanProyekDialog />
+        <MuatProyekDialog />
+        <SesiPulihkanDialog />
       </div>
     </div>
   );

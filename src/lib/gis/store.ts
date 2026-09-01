@@ -4,16 +4,27 @@ import { create } from "zustand";
 import type {
   ContourLayer,
   GisLabel,
+  GisLayer,
   GisPoint,
   GisShape,
   LabelMode,
   LatLng,
+  ProyekData,
   ToolMode,
 } from "./types";
 import { uid } from "./geo";
 
 export type ViewMode = "map" | "layout";
 export type Basemap = "osm" | "sat";
+
+/** Nama layer bawaan untuk hasil gambar manual (titik/teks/bentuk di peta). */
+export const NAMA_LAYER_MANUAL = "Gambar Manual";
+
+/** Buat nama layer dari nama file impor (tanpa ekstensi). */
+export function namaLayerDariFile(namaFile: string): string {
+  const dasar = namaFile.replace(/\.[^.]+$/, "").trim();
+  return dasar || "Data Impor";
+}
 
 export interface DialogState {
   import: boolean;
@@ -24,6 +35,9 @@ export interface DialogState {
   table: boolean;
   layoutPanel: boolean;
   elevasi: boolean;
+  layer: boolean;
+  simpan: boolean;
+  muat: boolean;
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -42,6 +56,7 @@ interface GisStore {
   shapes: GisShape[];
   labels: GisLabel[];
   contours: ContourLayer[];
+  layers: GisLayer[];
   selection: string[];
   tableShapeFilter: string | null;
   editBentukId: string | null; // bentuk yang langsung diedit saat alat edit-bentuk aktif
@@ -49,6 +64,7 @@ interface GisStore {
   flyNonce: number;
   flyTarget: LatLng & { zoom?: number };
   fitNonce: number;
+  mapView: { lat: number; lng: number; zoom: number }; // posisi peta terkini (diperbarui MapCanvas)
 
   setView: (v: ViewMode) => void;
   setBasemap: (b: Basemap) => void;
@@ -77,6 +93,24 @@ interface GisStore {
   removeContours: (id: string) => void;
   toggleContourVisible: (id: string) => void;
 
+  // ---------- Layer ----------
+  tambahLayer: (nama: string) => string;
+  pastikanLayerManual: () => string;
+  setLayerNama: (id: string, nama: string) => void;
+  setLayerTerlihat: (id: string, terlihat: boolean) => void;
+  setSemuaLayerTerlihat: (terlihat: boolean) => void;
+  hapusLayerIsi: (id: string) => { titik: number; bentuk: number };
+  lepasLayer: (id: string) => { titik: number; bentuk: number };
+  muatProyekData: (data: ProyekData, mode: "ganti" | "gabung") => {
+    titik: number;
+    bentuk: number;
+    label: number;
+    kontur: number;
+    layer: number;
+  };
+
+  setMapView: (v: { lat: number; lng: number; zoom: number }) => void;
+
   setSelection: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
@@ -98,6 +132,9 @@ const DIALOG_AWAL: DialogState = {
   table: false,
   layoutPanel: false,
   elevasi: false,
+  layer: false,
+  simpan: false,
+  muat: false,
   point: null,
   text: null,
   shapeInfo: null,
@@ -116,6 +153,7 @@ export const useGis = create<GisStore>((set, get) => ({
   shapes: [],
   labels: [],
   contours: [],
+  layers: [],
   selection: [],
   tableShapeFilter: null,
   editBentukId: null,
@@ -123,6 +161,7 @@ export const useGis = create<GisStore>((set, get) => ({
   flyNonce: 0,
   flyTarget: { lat: -6.994292, lng: 110.4294, zoom: 13 },
   fitNonce: 0,
+  mapView: { lat: -6.994292, lng: 110.4294, zoom: 15 },
 
   setView: (v) => set({ view: v }),
   setBasemap: (b) => set({ basemap: b }),
@@ -241,6 +280,132 @@ export const useGis = create<GisStore>((set, get) => ({
       ),
     })),
 
+  // ---------- Layer ----------
+  tambahLayer: (nama) => {
+    const id = uid("layer");
+    set((st) => ({
+      layers: [...st.layers, { id, nama, terlihat: true, dibuat: Date.now() }],
+    }));
+    return id;
+  },
+
+  pastikanLayerManual: () => {
+    const st = get();
+    const ada = st.layers.find((l) => l.nama === NAMA_LAYER_MANUAL);
+    if (ada) return ada.id;
+    return get().tambahLayer(NAMA_LAYER_MANUAL);
+  },
+
+  setLayerNama: (id, nama) =>
+    set((st) => ({
+      layers: st.layers.map((l) => (l.id === id ? { ...l, nama: nama.trim() || l.nama } : l)),
+    })),
+
+  setLayerTerlihat: (id, terlihat) =>
+    set((st) => ({
+      layers: st.layers.map((l) => (l.id === id ? { ...l, terlihat } : l)),
+      // sinkronkan bendera visible anggota agar peta/tabel/ekspor langsung mengikuti
+      points: st.points.map((p) => (p.layerId === id ? { ...p, visible: terlihat } : p)),
+      shapes: st.shapes.map((sh) => (sh.layerId === id ? { ...sh, visible: terlihat } : sh)),
+    })),
+
+  setSemuaLayerTerlihat: (terlihat) =>
+    set((st) => ({
+      layers: st.layers.map((l) => ({ ...l, terlihat })),
+      points: st.points.map((p) => (p.layerId ? { ...p, visible: terlihat } : p)),
+      shapes: st.shapes.map((sh) => (sh.layerId ? { ...sh, visible: terlihat } : sh)),
+    })),
+
+  hapusLayerIsi: (id) => {
+    const st = get();
+    const idTitik = new Set(st.points.filter((p) => p.layerId === id).map((p) => p.id));
+    const titik = idTitik.size;
+    const bentuk = st.shapes.filter((sh) => sh.layerId === id).length;
+    set({
+      points: st.points.filter((p) => p.layerId !== id),
+      shapes: st.shapes.filter((sh) => sh.layerId !== id),
+      // label yang menempel pada titik terhapus ATAU label teks milik layer ini
+      labels: st.labels.filter((l) => !idTitik.has(l.id) && l.layerId !== id),
+      layers: st.layers.filter((l) => l.id !== id),
+      selection: st.selection.filter((x) => !idTitik.has(x)),
+    });
+    return { titik, bentuk };
+  },
+
+  lepasLayer: (id) => {
+    const st = get();
+    const titik = st.points.filter((p) => p.layerId === id).length;
+    const bentuk = st.shapes.filter((sh) => sh.layerId === id).length;
+    set({
+      layers: st.layers.filter((l) => l.id !== id),
+      points: st.points.map((p) => (p.layerId === id ? { ...p, layerId: undefined, visible: true } : p)),
+      shapes: st.shapes.map((sh) => (sh.layerId === id ? { ...sh, layerId: undefined, visible: true } : sh)),
+      labels: st.labels.map((l) => (l.layerId === id ? { ...l, layerId: undefined } : l)),
+    });
+    return { titik, bentuk };
+  },
+
+  muatProyekData: (data, mode) => {
+    const st = get();
+    const pts = Array.isArray(data.points) ? data.points : [];
+    const shps = Array.isArray(data.shapes) ? data.shapes : [];
+    const lbls = Array.isArray(data.labels) ? data.labels : [];
+    const ctrs = Array.isArray(data.contours) ? data.contours : [];
+    const lyrs = Array.isArray(data.layers) ? data.layers : [];
+
+    if (mode === "ganti") {
+      const layersBersih = lyrs.map((l) => ({
+        ...l,
+        terlihat: l.terlihat !== false,
+      }));
+      set({
+        points: pts,
+        shapes: shps,
+        labels: lbls,
+        contours: ctrs,
+        layers: layersBersih,
+        selection: [],
+        tableShapeFilter: null,
+      });
+    } else {
+      // gabung: layer bernama sama dipetakan ke layer yang sudah ada (hindari duplikat)
+      const petaLama = new Map(st.layers.map((l) => [l.nama, l.id]));
+      const idLama = new Set(st.layers.map((l) => l.id));
+      const layersBaru: GisLayer[] = [];
+      const petaGabung = new Map<string, string>();
+      for (const l of lyrs) {
+        const eksisting = petaLama.get(l.nama);
+        if (eksisting) {
+          petaGabung.set(l.id, eksisting);
+        } else if (!idLama.has(l.id)) {
+          layersBaru.push({ ...l, terlihat: l.terlihat !== false });
+          idLama.add(l.id);
+        }
+      }
+      const petakan = (layerId?: string) =>
+        layerId ? petaGabung.get(layerId) ?? layerId : layerId;
+      set({
+        points: [...st.points, ...pts.map((p) => ({ ...p, layerId: petakan(p.layerId) }))],
+        shapes: [...st.shapes, ...shps.map((sh) => ({ ...sh, layerId: petakan(sh.layerId) }))],
+        labels: [...st.labels, ...lbls.map((l) => ({ ...l, layerId: petakan(l.layerId) }))],
+        contours: [...st.contours, ...ctrs],
+        layers: [...st.layers, ...layersBaru],
+      });
+    }
+
+    // terapkan tampilan tersimpan (basemap + posisi peta)
+    if (data.tampilan?.basemap === "sat" || data.tampilan?.basemap === "osm") {
+      set({ basemap: data.tampilan.basemap });
+    }
+    if (data.tampilan && typeof data.tampilan.lat === "number" && typeof data.tampilan.lng === "number") {
+      get().flyTo(data.tampilan.lat, data.tampilan.lng, data.tampilan.zoom);
+    }
+
+    return { titik: pts.length, bentuk: shps.length, label: lbls.length, kontur: ctrs.length, layer: lyrs.length };
+  },
+
+  setMapView: (v) => set({ mapView: v }),
+
   setSelection: (ids) => set({ selection: ids }),
   toggleSelect: (id) =>
     set((st) => ({
@@ -296,6 +461,11 @@ export function ambilPendingShape(): { kind: "closed" | "open"; vertices: LatLng
   return null;
 }
 
+/** Pastikan layer "Gambar Manual" ada dan kembalikan id-nya (dipakai luar komponen React). */
+export function pastikanLayerManualSekarang(): string {
+  return useGis.getState().pastikanLayerManual();
+}
+
 /** Simpan hasil gambar menjadi shape sungguhan (dipanggil setelah dialog judul). */
 export function simpanShapeDariPending(
   kind: "closed" | "open",
@@ -316,6 +486,7 @@ export function simpanShapeDariPending(
     source: "manual",
     visible: true,
     labelTampil,
+    layerId: useGis.getState().pastikanLayerManual(),
   };
   useGis.getState().addShape(shape);
   return shape;

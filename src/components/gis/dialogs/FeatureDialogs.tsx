@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useGis, simpanShapeDariPending } from "@/lib/gis/store";
+import { useGis, simpanShapeDariPending, pastikanLayerManualSekarang } from "@/lib/gis/store";
 import { uid } from "@/lib/gis/geo";
 import { ambilElevasiDEM } from "@/lib/gis/elevasi";
 import { toast } from "sonner";
@@ -82,6 +82,7 @@ function PointForm({
         source: "manual",
         visible: true,
         labelTampil,
+        layerId: pastikanLayerManualSekarang(),
       });
       // elevasi kosong → ambil otomatis dari DEM satelit (tak menimpa isi manual)
       if (elev == null || isNaN(elev)) {
@@ -251,7 +252,7 @@ function TextForm({
       st.updateLabel(state.editId, { text: text.trim() });
       toast.success("Label diperbarui");
     } else {
-      st.addLabel({ id: uid("label"), lat: state.lat, lng: state.lng, text: text.trim() });
+      st.addLabel({ id: uid("label"), lat: state.lat, lng: state.lng, text: text.trim(), layerId: pastikanLayerManualSekarang() });
       toast.success("Label teks ditambahkan");
     }
     tutup();

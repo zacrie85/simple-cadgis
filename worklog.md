@@ -372,3 +372,23 @@ Work Log:
 
 Stage Summary:
 - RILIS v1.2.0 SELESAI: tabel semua kolom + elevasi DEM otomatis kini ada di web (Pages) & installer Windows v1.2.0 di Releases.
+
+---
+Task ID: 19
+Agent: Super Z (main agent)
+Task: Fitur baru permintaan user — (1) menu Simpan/Muat data pekerjaan, (2) menu Layer untuk data yang tampil di aplikasi, (3) tampil/sembunyikan layer pilihan.
+
+Work Log:
+- Model data: GisLayer baru (id/nama/terlihat/dibuat) di types.ts + layerId? pada GisPoint/GisShape/GisLabel + tipe ProyekData (format file proyek).
+- store.ts: layers[] + mapView (posisi peta terkini), aksi tambahLayer/pastikanLayerManual/setLayerNama/setLayerTerlihat (sinkron bendera visible anggota → peta/tabel/ekspor langsung ikut)/setSemuaLayerTerlihat/hapusLayerIsi/lepasLayer/muatProyekData (mode ganti & gabung, layer bernama sama tak diduplikasi). DialogState + layer/simpan/muat. simpanShapeDariPending otomatis masuk layer "Gambar Manual".
+- proyek.ts baru: bangunProyek/unduhProyek (.cadgis.json berisi layer+titik+bentuk+label+kontur+tampilan)/bacaFileProyek + sesi otomatis localStorage (simpanSesiOtomatis, percobaan penuh → gagal kuota lepas foto → gagal diam; bacaSesiTersimpan/hapusSesi).
+- MapCanvas: titik kini menghormati visible (per fitur & per layer), label teks ikut visibilitas layer, sinkron moveend/zoomend → mapView, listener "geokita-fit-bounds" untuk zoom ke layer.
+- LayerPanel.tsx baru (Berkas → Layer): mata tampil/sembunyikan per layer, ganti nama inline, hitungan titik/bentuk, zoom ke layer, hapus (konfirmasi: Hapus+Isinya / Hapus Layer Saja), baris "Tanpa Layer", seksi layer kontur (mata + hapus), tombol Tampil/Sembunyikan Semua.
+- ProyekDialogs.tsx baru: SimpanProyekDialog (nama + ringkasan + ukuran ±KB), MuatProyekDialog (pilih file → pratinjau → Ganti Semua / Gabungkan), SesiPulihkanDialog (tawaran pulihkan saat buka aplikasi dengan data kosong), useSesiOtomatis (autosave debounce 1,5 dtk).
+- Toolbar Berkas + tombol Simpan/Muat/Layer; Demo masuk layer "Data Contoh"; ImportDialog (Excel/CSV & KML/KMZ) membuat layer dinamai nama file; titik manual & teks → "Gambar Manual".
+- Bug saat uji: SimpanProyekDialog memakai labels tanpa subscribe → ReferenceError overlay; diperbaiki (tambah selector).
+- Uji browser end-to-end: sembunyi/tampil layer (0→2 path), rename, zoom layer (z12→z19), hapus+isi, Sembunyikan/Tampil Semua (0→1 path), titik manual → "Gambar Manual", sesi pulihkan (26 titik•2 bentuk + timestamp, layer kembali lengkap), Simpan (ringkasan 26 titik, 2 layer, ±7 KB, unduh jalan), Muat file Jakarta (pratinjau → Ganti Semua: peta pindah Jakarta + view tersimpan), Gabungkan Bandung (2 layer bersanding), impor Excel → layer "uji-tanpa-elevasi" (10 titik). Nol error console setelah fix.
+- Lint bersih; build produksi sukses.
+
+Stage Summary:
+- Simpan/Muat proyek (.cadgis.json) + panel layer dengan kontrol tampil/sembunyikan lengkap + sesi otomatis anti-hilang. Belum di-push (menunggu PAT user; rilis berikutnya v1.3.0).

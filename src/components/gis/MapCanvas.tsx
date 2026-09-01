@@ -139,6 +139,7 @@ export default function MapCanvas() {
   const shapes = useGis((s) => s.shapes);
   const labels = useGis((s) => s.labels);
   const contours = useGis((s) => s.contours);
+  const layers = useGis((s) => s.layers);
   const selection = useGis((s) => s.selection);
   const basemap = useGis((s) => s.basemap);
   const labelMode = useGis((s) => s.labelMode);
@@ -189,6 +190,20 @@ export default function MapCanvas() {
       useGis.getState().mapClick(e.latlng.lat, e.latlng.lng);
     });
 
+    // posisi peta terkini → store (dipakai Simpan Proyek & sesi otomatis)
+    const kirimView = () => {
+      const c = map.getCenter();
+      useGis.getState().setMapView({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
+    };
+    map.on("moveend zoomend", kirimView);
+
+    // perintah zoom ke batas layer (dari Panel Layer)
+    const onFitBounds = (ev: Event) => {
+      const b = (ev as CustomEvent<[number, number][]>).detail;
+      if (Array.isArray(b) && b.length > 0) map.fitBounds(L.latLngBounds(b).pad(0.2));
+    };
+    window.addEventListener("geokita-fit-bounds", onFitBounds);
+
     const onZoom = (e: Event) => {
       const detail = (e as CustomEvent<number>).detail;
       map.zoomIn(detail);
@@ -199,6 +214,8 @@ export default function MapCanvas() {
     (window as unknown as { __geoMap?: L.Map }).__geoMap = map;
 
     return () => {
+      map.off("moveend zoomend", kirimView);
+      window.removeEventListener("geokita-fit-bounds", onFitBounds);
       window.removeEventListener("geokita-zoom", onZoom);
       map.remove();
       mapRef.current = null;
@@ -642,6 +659,7 @@ export default function MapCanvas() {
     const cap = Math.min(points.length, RENDER_CAP);
     for (let i = 0; i < cap; i++) {
       const p = points[i];
+      if (!p.visible) continue; // disembunyikan per fitur / per layer
       const terpilih = selection.includes(p.id);
       const marker = L.circleMarker([p.lat, p.lng], {
         renderer,
@@ -767,7 +785,9 @@ export default function MapCanvas() {
     const l = layerRef.current;
     if (!l) return;
     l.labels.clearLayers();
+    const layerSembunyi = new Set(layers.filter((x) => !x.terlihat).map((x) => x.id));
     for (const lb of labels) {
+      if (lb.layerId && layerSembunyi.has(lb.layerId)) continue; // label ikut layer
       const icon = L.divIcon({
         className: "",
         html: `<div class="geokita-label">${escapeHtml(lb.text)}</div>`,
@@ -779,7 +799,7 @@ export default function MapCanvas() {
       });
       m.addTo(l.labels);
     }
-  }, [labels]);
+  }, [labels, layers]);
 
   // ---------- Render kontur ----------
   useEffect(() => {

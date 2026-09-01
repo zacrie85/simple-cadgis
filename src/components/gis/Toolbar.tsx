@@ -5,6 +5,9 @@ import {
   Upload,
   Table2,
   Download,
+  Save,
+  FolderOpen,
+  Layers,
   MapPin,
   Hexagon,
   Minus,
@@ -62,11 +65,12 @@ export default function Toolbar() {
 
   const muatContoh = () => {
     const { points, shapes } = dataContoh();
-    s.addPoints(points);
-    shapes.forEach((sh) => s.addShape(sh));
+    const layerId = s.tambahLayer("Data Contoh");
+    s.addPoints(points.map((p) => ({ ...p, layerId })));
+    shapes.forEach((sh) => s.addShape({ ...sh, layerId }));
     s.fitData();
     toast.success("Data contoh dimuat", {
-      description: `${points.length} titik elevasi + ${shapes.length} poligon/garis. Coba menu Kontur & Volume!`,
+      description: `${points.length} titik elevasi + ${shapes.length} poligon/garis pada layer "Data Contoh". Coba menu Kontur & Volume!`,
     });
   };
 
@@ -112,6 +116,9 @@ export default function Toolbar() {
         { label: "Impor", icon: Upload, title: "Impor Excel / CSV / KML / KMZ", onClick: () => s.setDialog("import", true) },
         { label: "Tabel", icon: Table2, title: "Buka tabel data", onClick: () => s.setDialog("table", true), active: s.dialogs.table },
         { label: "Ekspor", icon: Download, title: "Ekspor ke KMZ / Excel / SHP", onClick: () => s.setDialog("export", true) },
+        { label: "Simpan", icon: Save, title: "Simpan proyek ke file .cadgis.json (semua data + layer)", onClick: () => s.setDialog("simpan", true), active: s.dialogs.simpan },
+        { label: "Muat", icon: FolderOpen, title: "Muat proyek dari file .cadgis.json (ganti semua / gabungkan)", onClick: () => s.setDialog("muat", true), active: s.dialogs.muat },
+        { label: "Layer", icon: Layers, title: "Panel layer — tampil/sembunyikan per layer, ganti nama, zoom, hapus", onClick: () => s.setDialog("layer", true), active: s.dialogs.layer },
       ],
     },
     {

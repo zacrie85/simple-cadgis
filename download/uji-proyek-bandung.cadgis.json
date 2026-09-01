@@ -1,0 +1,30 @@
+{
+  "app": "SIMPLE CADGIS",
+  "versi": 1,
+  "disimpanPada": "2026-09-01T03:12:00.000Z",
+  "nama": "Proyek Bandung",
+  "layers": [
+    {
+      "id": "layer-uji-bdg",
+      "nama": "Titik Bandung",
+      "terlihat": true,
+      "dibuat": 1756690100000
+    }
+  ],
+  "points": [
+    {
+      "id": "titik-bdg-1",
+      "lat": -6.9147,
+      "lng": 107.6098,
+      "title": "Gedung Sate",
+      "description": "",
+      "attrs": {},
+      "source": "manual",
+      "visible": true,
+      "layerId": "layer-uji-bdg"
+    }
+  ],
+  "shapes": [],
+  "labels": [],
+  "contours": []
+}

@@ -5,6 +5,14 @@ export interface LatLng {
   lng: number;
 }
 
+/** Layer/group data: satu hasil impor atau kumpulan gambar manual. */
+export interface GisLayer {
+  id: string;
+  nama: string;
+  terlihat: boolean;
+  dibuat: number; // epoch ms
+}
+
 export interface GisPoint {
   id: string;
   lat: number;
@@ -17,6 +25,7 @@ export interface GisPoint {
   source: "manual" | "excel" | "csv" | "kml";
   visible: boolean;
   labelTampil?: boolean; // tanda: label nama titik ini tampil pada mode "terpilih"
+  layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
 }
 
 export interface GisShape {
@@ -30,6 +39,7 @@ export interface GisShape {
   source: "manual" | "kml";
   visible: boolean;
   labelTampil?: boolean; // tanda: label nama bentuk ini tampil pada mode "terpilih"
+  layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
 }
 
 export interface GisLabel {
@@ -37,6 +47,7 @@ export interface GisLabel {
   lat: number;
   lng: number;
   text: string;
+  layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
 }
 
 export interface ContourPath {
@@ -72,6 +83,21 @@ export type ToolMode =
 export type LabelMode = "semua" | "terpilih" | "sembunyi";
 
 export type FeatureType = "point" | "shape";
+
+/** Isi file proyek (.cadgis.json) — seluruh pekerjaan dalam satu file. */
+export interface ProyekData {
+  app: "SIMPLE CADGIS";
+  versi: number;
+  disimpanPada: string; // ISO
+  nama?: string;
+  layers: GisLayer[];
+  points: GisPoint[];
+  shapes: GisShape[];
+  labels: GisLabel[];
+  contours: ContourLayer[];
+  tampilan?: { basemap?: "osm" | "sat"; lat?: number; lng?: number; zoom?: number };
+  fotoLepas?: boolean; // true bila foto dilepas saat menyimpan (kuota/ukuran)
+}
 
 /** Item baris tabel data (titik & poligon/garis digabung, seperti atribut tabel ArcGIS). */
 export interface TableRow {

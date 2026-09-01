@@ -1,0 +1,984 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useRef } from "react";
+     4→import L from "leaflet";
+     5→import { toast } from "sonner";
+     6→import { useGis } from "@/lib/gis/store";
+     7→import { warnaElevasi } from "@/lib/gis/contours";
+     8→import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
+     9→import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
+    10→
+    11→const RENDER_CAP = 20000; // batas titik dirender (data lengkap tetap di memori/tabel)
+    12→
+    13→// Penanda sementara: true bila fitur baru saja diklik pada mode blok
+    14→// (mencegah klik kosong pada peta menghapus seleksi yang baru dibuat)
+    15→let klikFiturBarusan = false;
+    16→// Mode drag terakhir: Shift/Ctrl ditekan saat mulai drag = tambah ke pilihan
+    17→let dragTambah = false;
+    18→
+    19→/** Kumpulan layer Leaflet milik peta utama (diisi sekali saat init). */
+    20→type LayerMap = {
+    21→  osm: L.TileLayer;
+    22→  sat: L.TileLayer;
+    23→  points: L.LayerGroup;
+    24→  shapes: L.LayerGroup;
+    25→  labels: L.LayerGroup;
+    26→  contours: L.LayerGroup;
+    27→  temp: L.LayerGroup;
+    28→};
+    29→
+    30→// ============ Geometri bantu: lingkaran / elips / busur (Task 15) ============
+    31→
+    32→const N_LINGKARAN = 64;
+    33→const N_BUSUR = 48;
+    34→
+    35→/** Proyeksi lokal derajat ↔ meter di sekitar titik asal (cukup akurat untuk gambar lokal). */
+    36→function buatProyeksi(o: LatLng) {
+    37→  const mx = 111320 * Math.cos((o.lat * Math.PI) / 180);
+    38→  const my = 110540;
+    39→  return {
+    40→    xy: (p: LatLng) => ({ x: (p.lng - o.lng) * mx, y: (p.lat - o.lat) * my }),
+    41→    latlng: (x: number, y: number): LatLng => ({ lat: o.lat + y / my, lng: o.lng + x / mx }),
+    42→  };
+    43→}
+    44→
+    45→/** Vertiks lingkaran (poligon tertutup halus). */
+    46→function titikLingkaran(c: LatLng, rMeter: number, n = N_LINGKARAN): LatLng[] {
+    47→  const proy = buatProyeksi(c);
+    48→  return Array.from({ length: n }, (_, i) => {
+    49→    const a = (i / n) * 2 * Math.PI;
+    50→    return proy.latlng(rMeter * Math.cos(a), rMeter * Math.sin(a));
+    51→  });
+    52→}
+    53→
+    54→/** Vertiks elips dari pusat + jari-jari horizontal & vertikal (meter). */
+    55→function titikElips(c: LatLng, rx: number, ry: number, n = N_LINGKARAN): LatLng[] {
+    56→  const proy = buatProyeksi(c);
+    57→  return Array.from({ length: n }, (_, i) => {
+    58→    const a = (i / n) * 2 * Math.PI;
+    59→    return proy.latlng(rx * Math.cos(a), ry * Math.sin(a));
+    60→  });
+    61→}
+    62→
+    63→/**
+    64→ * Busur SETENGAH lingkaran dari a ke b, menggelembung ke kiri/kanan arah jalan a→b
+    65→ * (seperti belokan U di AutoCAD). Kiri = sisi kiri arah jalan.
+    66→ */
+    67→function titikBusurSetengah(a: LatLng, b: LatLng, arah: "kiri" | "kanan", n = N_BUSUR): LatLng[] {
+    68→  const o: LatLng = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+    69→  const proy = buatProyeksi(o);
+    70→  const A = proy.xy(a);
+    71→  const B = proy.xy(b);
+    72→  const cx = (A.x + B.x) / 2;
+    73→  const cy = (A.y + B.y) / 2;
+    74→  const r = Math.hypot(B.x - A.x, B.y - A.y) / 2;
+    75→  const t0 = Math.atan2(A.y - cy, A.x - cx);
+    76→  // normal kiri arah jalan = sudut chord − 90° → geser sudut -1 (kiri) / +1 (kanan)
+    77→  const sgn = arah === "kiri" ? -1 : 1;
+    78→  const pts: LatLng[] = [];
+    79→  for (let i = 0; i <= n; i++) {
+    80→    const ang = t0 + sgn * (i / n) * Math.PI;
+    81→    pts.push(proy.latlng(cx + r * Math.cos(ang), cy + r * Math.sin(ang)));
+    82→  }
+    83→  return pts;
+    84→}
+    85→
+    86→/** Kurva Bezier kuadratik a→b lewat m (tanpa titik ujung — sudah ada di vertices). */
+    87→function titikBezier2(a: LatLng, m: LatLng, b: LatLng, n = 24): LatLng[] {
+    88→  const pts: LatLng[] = [];
+    89→  for (let i = 1; i <= n; i++) {
+    90→    const t = i / n;
+    91→    const u = 1 - t;
+    92→    pts.push({
+    93→      lat: u * u * a.lat + 2 * u * t * m.lat + t * t * b.lat,
+    94→      lng: u * u * a.lng + 2 * u * t * m.lng + t * t * b.lng,
+    95→    });
+    96→  }
+    97→  return pts;
+    98→}
+    99→
+   100→/** Jarak px titik ke ruas layar a-b (hit-test klik pada garis). */
+   101→function jarakKeRuasPx(p: L.Point, a: L.Point, b: L.Point): number {
+   102→  const dx = b.x - a.x;
+   103→  const dy = b.y - a.y;
+   104→  const len2 = dx * dx + dy * dy || 1;
+   105→  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+   106→  t = Math.max(0, Math.min(1, t));
+   107→  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+   108→}
+   109→
+   110→/** Titik dalam poligon layar (ray casting) — hit-test klik pada poligon. */
+   111→function dalamPoligonPx(p: L.Point, pts: L.Point[]): boolean {
+   112→  let dalam = false;
+   113→  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+   114→    const xi = pts[i].x;
+   115→    const yi = pts[i].y;
+   116→    const xj = pts[j].x;
+   117→    const yj = pts[j].y;
+   118→    const potong = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi;
+   119→    if (potong) dalam = !dalam;
+   120→  }
+   121→  return dalam;
+   122→}
+   123→
+   124→/** Ikon kecil untuk handle edit bentuk. */
+   125→function ikonHandle(jenis: "titik" | "tengah"): L.DivIcon {
+   126→  const html =
+   127→    jenis === "titik"
+   128→      ? `<div style="width:12px;height:12px;background:#f59e0b;border:2px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`
+   129→      : `<div style="width:11px;height:11px;background:#2563eb;border:2px solid #fff;border-radius:9999px;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`;
+   130→  return L.divIcon({ className: "", html, iconSize: [12, 12], iconAnchor: [6, 6] });
+   131→}
+   132→
+   133→export default function MapCanvas() {
+   134→  const containerRef = useRef<HTMLDivElement>(null);
+   135→  const mapRef = useRef<L.Map | null>(null);
+   136→  const layerRef = useRef<LayerMap | null>(null);
+   137→
+   138→  const points = useGis((s) => s.points);
+   139→  const shapes = useGis((s) => s.shapes);
+   140→  const labels = useGis((s) => s.labels);
+   141→  const contours = useGis((s) => s.contours);
+   142→  const selection = useGis((s) => s.selection);
+   143→  const basemap = useGis((s) => s.basemap);
+   144→  const labelMode = useGis((s) => s.labelMode);
+   145→  const pendingVertices = useGis((s) => s.pendingVertices);
+   146→  const tool = useGis((s) => s.tool);
+   147→  const measurePoints = useGis((s) => s.measurePoints);
+   148→  const flyNonce = useGis((s) => s.flyNonce);
+   149→  const flyTarget = useGis((s) => s.flyTarget);
+   150→  const fitNonce = useGis((s) => s.fitNonce);
+   151→  const view = useGis((s) => s.view);
+   152→
+   153→  // ---------- Inisialisasi peta ----------
+   154→  useEffect(() => {
+   155→    if (!containerRef.current || mapRef.current) return;
+   156→
+   157→    const map = L.map(containerRef.current, {
+   158→      zoomControl: false,
+   159→      attributionControl: true,
+   160→      center: [-6.994292, 110.4294],
+   161→      zoom: 15,
+   162→    });
+   163→    mapRef.current = map;
+   164→
+   165→    const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+   166→      maxZoom: 19,
+   167→      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+   168→    }).addTo(map);
+   169→
+   170→    const sat = L.tileLayer(
+   171→      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+   172→      {
+   173→        maxZoom: 19,
+   174→        attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics",
+   175→      }
+   176→    );
+   177→
+   178→    layerRef.current = {
+   179→      osm,
+   180→      sat,
+   181→      points: L.layerGroup().addTo(map),
+   182→      shapes: L.layerGroup().addTo(map),
+   183→      labels: L.layerGroup().addTo(map),
+   184→      contours: L.layerGroup().addTo(map),
+   185→      temp: L.layerGroup().addTo(map),
+   186→    };
+   187→
+   188→    map.on("click", (e: L.LeafletMouseEvent) => {
+   189→      useGis.getState().mapClick(e.latlng.lat, e.latlng.lng);
+   190→    });
+   191→
+   192→    const onZoom = (e: Event) => {
+   193→      const detail = (e as CustomEvent<number>).detail;
+   194→      map.zoomIn(detail);
+   195→    };
+   196→    window.addEventListener("geokita-zoom", onZoom);
+   197→
+   198→    // ekspos untuk pengujian otomatis (tidak berpengaruh ke UI)
+   199→    (window as unknown as { __geoMap?: L.Map }).__geoMap = map;
+   200→
+   201→    return () => {
+   202→      window.removeEventListener("geokita-zoom", onZoom);
+   203→      map.remove();
+   204→      mapRef.current = null;
+   205→      layerRef.current = null;
+   206→    };
+   207→  }, []);
+   208→
+   209→  // ---------- Basemap ----------
+   210→  useEffect(() => {
+   211→    const l = layerRef.current;
+   212→    const map = mapRef.current;
+   213→    if (!l || !map) return;
+   214→    if (basemap === "sat") {
+   215→      if (map.hasLayer(l.osm)) map.removeLayer(l.osm);
+   216→      if (!map.hasLayer(l.sat)) l.sat.addTo(map);
+   217→    } else {
+   218→      if (map.hasLayer(l.sat)) map.removeLayer(l.sat);
+   219→      if (!map.hasLayer(l.osm)) l.osm.addTo(map);
+   220→    }
+   221→  }, [basemap]);
+   222→
+   223→  // ---------- Kursor sesuai alat ----------
+   224→  useEffect(() => {
+   225→    const el = containerRef.current;
+   226→    if (!el) return;
+   227→    el.style.cursor = tool ? "crosshair" : "";
+   228→  }, [tool]);
+   229→
+   230→  // ---------- Alat blok seleksi & zoom kotak (drag persegi) ----------
+   231→  useEffect(() => {
+   232→    if (tool !== "select" && tool !== "zoombox") return;
+   233→    const map = mapRef.current;
+   234→    const l = layerRef.current;
+   235→    if (!map || !l) return;
+   236→
+   237→    // matikan geser peta agar drag digunakan untuk kotak
+   238→    map.dragging.disable();
+   239→    map.doubleClickZoom.disable();
+   240→
+   241→    let awal: L.LatLng | null = null;
+   242→    let posisiTerakhir: L.LatLng | null = null;
+   243→    let kotak: L.Rectangle | null = null;
+   244→    let cukupJauh = false;
+   245→
+   246→    const gaya =
+   247→      tool === "select"
+   248→        ? { color: "#2563eb", weight: 1.5, dashArray: "6 4", fillColor: "#3b82f6", fillOpacity: 0.12 }
+   249→        : { color: "#7c3aed", weight: 1.5, dashArray: "6 4", fillColor: "#7c3aed", fillOpacity: 0.12 };
+   250→
+   251→    const selesaikan = (akhir: L.LatLng | null) => {
+   252→      const mula = awal;
+   253→      awal = null;
+   254→      posisiTerakhir = null;
+   255→      if (kotak) {
+   256→        l.temp.removeLayer(kotak);
+   257→        kotak = null;
+   258→      }
+   259→      if (!mula || !akhir) return;
+   260→
+   261→      if (!cukupJauh) {
+   262→        // hanya klik (tanpa drag)
+   263→        if (tool === "select") {
+   264→          // klik area kosong mengosongkan seleksi — kecuali yang diklik adalah fitur
+   265→          setTimeout(() => {
+   266→            if (!klikFiturBarusan) useGis.getState().clearSelection();
+   267→            klikFiturBarusan = false;
+   268→          }, 0);
+   269→        }
+   270→        return;
+   271→      }
+   272→
+   273→      const bounds = L.latLngBounds(mula, akhir);
+   274→
+   275→      if (tool === "zoombox") {
+   276→        map.fitBounds(bounds, { padding: [8, 8] });
+   277→        useGis.getState().setTool(null); // selesai otomatis seperti Zoom Window AutoCAD
+   278→        return;
+   279→      }
+   280→
+   281→      // ---- blok seleksi: semua titik di dalam kotak + bentuk yang beririsan ----
+   282→      const st = useGis.getState();
+   283→      const tambah = dragTambah;
+   284→      const dasar = tambah ? [...st.selection] : [];
+   285→      const ids = new Set(dasar);
+   286→      let nTitik = 0;
+   287→      let nBentuk = 0;
+   288→      const dasarSet = new Set(dasar);
+   289→      for (const p of st.points) {
+   290→        if (bounds.contains([p.lat, p.lng])) {
+   291→          if (!dasarSet.has(p.id)) nTitik++;
+   292→          ids.add(p.id);
+   293→        }
+   294→      }
+   295→      for (const sh of st.shapes) {
+   296→        const bbox = L.latLngBounds(sh.vertices.map((v) => [v.lat, v.lng] as [number, number]));
+   297→        const kena =
+   298→          sh.vertices.some((v) => bounds.contains([v.lat, v.lng])) || bbox.intersects(bounds);
+   299→        if (kena) {
+   300→          if (!dasarSet.has(sh.id)) nBentuk++;
+   301→          ids.add(sh.id);
+   302→        }
+   303→      }
+   304→      useGis.getState().setSelection(Array.from(ids));
+   305→      const totalBaru = ids.size - dasarSet.size;
+   306→      toast.success(`${totalBaru} fitur terblok`, {
+   307→        description: `${nTitik} titik + ${nBentuk} poligon/garis masuk kotak${tambah ? " (ditambah ke pilihan)" : ""}. Total terpilih: ${ids.size}. Klik Hapus untuk menghapus.`,
+   308→      });
+   309→    };
+   310→
+   311→    const onMouseDown = (e: L.LeafletMouseEvent) => {
+   312→      awal = e.latlng;
+   313→      posisiTerakhir = e.latlng;
+   314→      cukupJauh = false;
+   315→    };
+   316→    const onMouseMove = (e: L.LeafletMouseEvent) => {
+   317→      posisiTerakhir = e.latlng;
+   318→      if (!awal) return;
+   319→      const p1 = map.latLngToContainerPoint(awal);
+   320→      const p2 = map.latLngToContainerPoint(e.latlng);
+   321→      if (Math.abs(p1.x - p2.x) < 6 || Math.abs(p1.y - p2.y) < 6) return;
+   322→      cukupJauh = true;
+   323→      const bounds = L.latLngBounds(awal, e.latlng);
+   324→      if (!kotak) {
+   325→        kotak = L.rectangle(bounds, { ...gaya, interactive: false });
+   326→        kotak.addTo(l.temp);
+   327→      } else {
+   328→        kotak.setBounds(bounds);
+   329→      }
+   330→    };
+   331→    const onMouseUp = () => selesaikan(posisiTerakhir);
+   332→    const onWindowUp = () => {
+   333→      if (awal) selesaikan(posisiTerakhir);
+   334→    };
+   335→    const onKey = (e: KeyboardEvent) => {
+   336→      if (e.key === "Escape") useGis.getState().setTool(null);
+   337→    };
+   338→
+   339→    // Shift/Ctrl saat mulai drag = tambahkan ke pilihan yang sudah ada
+   340→    const onDownShift = (e: L.LeafletMouseEvent) => {
+   341→      dragTambah = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+   342→      onMouseDown(e);
+   343→    };
+   344→
+   345→    map.on("mousedown", onDownShift);
+   346→    map.on("mousemove", onMouseMove);
+   347→    map.on("mouseup", onMouseUp);
+   348→    window.addEventListener("mouseup", onWindowUp);
+   349→    window.addEventListener("keydown", onKey);
+   350→
+   351→    return () => {
+   352→      map.off("mousedown", onDownShift);
+   353→      map.off("mousemove", onMouseMove);
+   354→      map.off("mouseup", onMouseUp);
+   355→      window.removeEventListener("mouseup", onWindowUp);
+   356→      window.removeEventListener("keydown", onKey);
+   357→      if (kotak && l.temp.hasLayer(kotak)) l.temp.removeLayer(kotak);
+   358→      map.dragging.enable();
+   359→      map.doubleClickZoom.enable();
+   360→      dragTambah = false;
+   361→    };
+   362→  }, [tool]);
+   363→
+   364→  // ---------- Alat bentuk: bulatan / elips / lengkung kiri-kanan ----------
+   365→  useEffect(() => {
+   366→    if (tool !== "bulatan" && tool !== "elips" && tool !== "lengkung-kiri" && tool !== "lengkung-kanan") return;
+   367→    const map = mapRef.current;
+   368→    const l = layerRef.current;
+   369→    if (!map || !l) return;
+   370→
+   371→    const pv = L.layerGroup().addTo(l.temp); // pratinjau khusus alat ini
+   372→    let awal: L.LatLng | null = null;
+   373→
+   374→    const onMove = (e: L.LeafletMouseEvent) => {
+   375→      if (!awal) return;
+   376→      pv.clearLayers();
+   377→      const gaya = { color: "#2563eb", weight: 2, dashArray: "6 5", fillColor: "#3b82f6", fillOpacity: 0.08, interactive: false };
+   378→      if (tool === "bulatan") {
+   379→        const r = jarakHaversine(awal, e.latlng);
+   380→        L.circle(awal, { ...gaya, radius: r }).addTo(pv);
+   381→        L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
+   382→          .setLatLng(e.latlng).setContent(`R ${fmtMeter(r)}`).addTo(pv);
+   383→      } else if (tool === "elips") {
+   384→        const P = buatProyeksi(awal).xy(e.latlng);
+   385→        L.polygon(
+   386→          titikElips(awal, Math.abs(P.x), Math.abs(P.y), 48).map((v) => [v.lat, v.lng] as [number, number]),
+   387→          gaya
+   388→        ).addTo(pv);
+   389→        L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
+   390→          .setLatLng(e.latlng).setContent(`${fmtMeter(Math.abs(P.x))} × ${fmtMeter(Math.abs(P.y))}`).addTo(pv);
+   391→      } else {
+   392→        const arah = tool === "lengkung-kiri" ? "kiri" : "kanan";
+   393→        L.polyline(
+   394→          titikBusurSetengah(awal, e.latlng, arah).map((v) => [v.lat, v.lng] as [number, number]),
+   395→          { color: "#2563eb", weight: 2.5, dashArray: "6 5", interactive: false }
+   396→        ).addTo(pv);
+   397→        const chord = jarakHaversine(awal, e.latlng);
+   398→        L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
+   399→          .setLatLng(e.latlng).setContent(`R ${fmtMeter(chord / 2)}`).addTo(pv);
+   400→      }
+   401→    };
+   402→
+   403→    const simpanBentuk = (kind: "closed" | "open", vertices: LatLng[]) => {
+   404→      // buka dialog penamaan (alur sama dengan poligon/garis)
+   405→      useGis.setState({
+   406→        tool: null,
+   407→        pendingVertices: [],
+   408→        pendingShapeSave: { kind, vertices },
+   409→        dialogs: { ...useGis.getState().dialogs, shapeInfo: { id: "pending:baru" } },
+   410→      });
+   411→    };
+   412→
+   413→    const onKlik = (e: L.LeafletMouseEvent) => {
+   414→      if (!awal) {
+   415→        awal = e.latlng;
+   416→        return;
+   417→      }
+   418→      const akhir = e.latlng;
+   419→      if (tool === "bulatan") {
+   420→        const r = jarakHaversine(awal, akhir);
+   421→        if (r < 1) {
+   422→          toast.error("Radius terlalu kecil — klik lebih jauh dari pusat.");
+   423→          return;
+   424→        }
+   425→        simpanBentuk("closed", titikLingkaran(awal, r));
+   426→      } else if (tool === "elips") {
+   427→        const P = buatProyeksi(awal).xy(akhir);
+   428→        if (Math.abs(P.x) < 1 && Math.abs(P.y) < 1) {
+   429→          toast.error("Elips terlalu kecil — klik lebih jauh dari pusat.");
+   430→          return;
+   431→        }
+   432→        simpanBentuk("closed", titikElips(awal, Math.abs(P.x), Math.abs(P.y)));
+   433→      } else {
+   434→        const chord = jarakHaversine(awal, akhir);
+   435→        if (chord < 1) {
+   436→          toast.error("Busur terlalu kecil — klik awal dan akhir lebih berjauhan.");
+   437→          return;
+   438→        }
+   439→        simpanBentuk("open", titikBusurSetengah(awal, akhir, tool === "lengkung-kiri" ? "kiri" : "kanan"));
+   440→      }
+   441→    };
+   442→
+   443→    const onKey = (e: KeyboardEvent) => {
+   444→      if (e.key === "Escape") useGis.getState().setTool(null);
+   445→    };
+   446→    map.on("click", onKlik);
+   447→    map.on("mousemove", onMove);
+   448→    window.addEventListener("keydown", onKey);
+   449→    return () => {
+   450→      map.off("click", onKlik);
+   451→      map.off("mousemove", onMove);
+   452→      window.removeEventListener("keydown", onKey);
+   453→      l.temp.removeLayer(pv);
+   454→    };
+   455→  }, [tool]);
+   456→
+   457→  // ---------- Alat edit bentuk: pindah titik + lengkungkan ruas lurus (ala AutoCAD) ----------
+   458→  useEffect(() => {
+   459→    if (tool !== "edit-bentuk") return;
+   460→    const map = mapRef.current;
+   461→    const l = layerRef.current;
+   462→    if (!map || !l) return;
+   463→
+   464→    let shapeId: string | null = null;
+   465→    let verts: LatLng[] = [];
+   466→    let kind: "closed" | "open" = "open";
+   467→    let bengkok: { seg: number; mid: LatLng } | null = null;
+   468→    let handles: L.Marker[] = [];
+   469→    let garis: L.Polyline | null = null;
+   470→
+   471→    const bersihkanHandle = () => {
+   472→      handles.forEach((h) => l.temp.removeLayer(h));
+   473→      handles = [];
+   474→    };
+   475→
+   476→    /** Vertiks saat ini: ruas yang dibengkokkan diganti kurva Bezier. */
+   477→    const verticesKini = (): LatLng[] => {
+   478→      if (!bengkok) return verts;
+   479→      const a = verts[bengkok.seg];
+   480→      const b = verts[(bengkok.seg + 1) % verts.length];
+   481→      if (!a || !b) return verts;
+   482→      return [
+   483→        ...verts.slice(0, bengkok.seg + 1),
+   484→        ...titikBezier2(a, bengkok.mid, b),
+   485→        ...verts.slice(bengkok.seg + 1),
+   486→      ];
+   487→    };
+   488→
+   489→    const gambarPratinjau = () => {
+   490→      const vv = verticesKini().map((v) => [v.lat, v.lng] as [number, number]);
+   491→      if (kind === "closed" && vv.length >= 3) vv.push(vv[0]);
+   492→      if (!garis) {
+   493→        garis = L.polyline(vv, { color: "#f59e0b", weight: 3, opacity: 0.95, interactive: false }).addTo(l.temp);
+   494→      } else {
+   495→        garis.setLatLngs(vv);
+   496→      }
+   497→    };
+   498→
+   499→    const bangunHandle = () => {
+   500→      bersihkanHandle();
+   501→      const min = kind === "closed" ? 3 : 2;
+   502→      const n = verts.length;
+   503→
+   504→      // handle titik (kotak oranye): seret = pindah • Alt+klik = hapus
+   505→      verts.forEach((v, i) => {
+   506→        const m = L.marker([v.lat, v.lng], { icon: ikonHandle("titik"), draggable: true, zIndexOffset: 800 });
+   507→        m.on("drag", () => {
+   508→          verts[i] = m.getLatLng();
+   509→          gambarPratinjau();
+   510→        });
+   511→        m.on("dragend", () => {
+   512→          verts = verticesKini();
+   513→          bengkok = null;
+   514→          useGis.getState().updateShape(shapeId!, { vertices: verts });
+   515→          bangunHandle();
+   516→          gambarPratinjau();
+   517→        });
+   518→        m.on("click", (e) => {
+   519→          const ev = (e as unknown as L.LeafletMouseEvent).originalEvent;
+   520→          if (ev?.altKey && verts.length > min) {
+   521→            verts.splice(i, 1);
+   522→            useGis.getState().updateShape(shapeId!, { vertices: verts });
+   523→            bangunHandle();
+   524→            gambarPratinjau();
+   525→          }
+   526→        });
+   527→        m.addTo(l.temp);
+   528→        handles.push(m);
+   529→      });
+   530→
+   531→      // handle tengah ruas (bulat biru): seret = lengkungkan ruas jadi busur
+   532→      const jumlahRuas = kind === "closed" ? n : n - 1;
+   533→      for (let i = 0; i < jumlahRuas; i++) {
+   534→        const a = verts[i];
+   535→        const b = verts[(i + 1) % n];
+   536→        const mid: LatLng = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+   537→        const m = L.marker([mid.lat, mid.lng], { icon: ikonHandle("tengah"), draggable: true, zIndexOffset: 900 });
+   538→        m.on("dragstart", () => {
+   539→          bengkok = { seg: i, mid: m.getLatLng() };
+   540→          gambarPratinjau();
+   541→        });
+   542→        m.on("drag", () => {
+   543→          if (bengkok) bengkok.mid = m.getLatLng();
+   544→          gambarPratinjau();
+   545→        });
+   546→        m.on("dragend", () => {
+   547→          if (bengkok) {
+   548→            verts = verticesKini();
+   549→            bengkok = null;
+   550→            useGis.getState().updateShape(shapeId!, { vertices: verts });
+   551→          }
+   552→          bangunHandle();
+   553→          gambarPratinjau();
+   554→        });
+   555→        m.addTo(l.temp);
+   556→        handles.push(m);
+   557→      }
+   558→    };
+   559→
+   560→    const akhiriSesi = () => {
+   561→      bersihkanHandle();
+   562→      if (garis) {
+   563→        l.temp.removeLayer(garis);
+   564→        garis = null;
+   565→      }
+   566→      shapeId = null;
+   567→      bengkok = null;
+   568→    };
+   569→
+   570→    const mulai = (sh: GisShape) => {
+   571→      if (shapeId === sh.id) return; // sudah diedit — hindari inisialisasi ulang
+   572→      shapeId = sh.id;
+   573→      verts = sh.vertices.map((v) => ({ ...v }));
+   574→      kind = sh.kind;
+   575→      bengkok = null;
+   576→      bangunHandle();
+   577→      gambarPratinjau();
+   578→      toast.info(`Mengedit: ${sh.title || "bentuk"}`, {
+   579→        description:
+   580→          "Seret kotak oranye = pindah titik • seret bulat biru di tengah ruas = lengkungkan • Alt+klik kotak = hapus titik • klik area kosong = pilih bentuk lain • Esc = selesai",
+   581→      });
+   582→    };
+   583→
+   584→    // bentuk yang diminta langsung dari popup "Edit Titik"
+   585→    const preset = useGis.getState().editBentukId;
+   586→    useGis.getState().setEditBentukId(null);
+   587→    if (preset) {
+   588→      const sh = useGis.getState().shapes.find((x) => x.id === preset);
+   589→      if (sh) mulai(sh);
+   590→    }
+   591→
+   592→    const onEditEv = (ev: Event) => {
+   593→      const id = (ev as CustomEvent<string>).detail;
+   594→      const sh = useGis.getState().shapes.find((x) => x.id === id);
+   595→      if (sh) mulai(sh);
+   596→    };
+   597→    window.addEventListener("geokita-edit-bentuk", onEditEv);
+   598→
+   599→    // klik peta: pilih bentuk yang kena (hit-test layar); klik area kosong = akhiri sesi
+   600→    const onKlik = (e: L.LeafletMouseEvent) => {
+   601→      const st = useGis.getState();
+   602→      const cp = map.latLngToContainerPoint(e.latlng);
+   603→      for (let si = st.shapes.length - 1; si >= 0; si--) {
+   604→        const sh = st.shapes[si];
+   605→        if (!sh.visible) continue;
+   606→        const pts = sh.vertices.map((v) => map.latLngToContainerPoint([v.lat, v.lng]));
+   607→        let minD = Infinity;
+   608→        for (let i = 0; i < pts.length - 1; i++) minD = Math.min(minD, jarakKeRuasPx(cp, pts[i], pts[i + 1]));
+   609→        if (sh.kind === "closed" && pts.length >= 3) {
+   610→          if (dalamPoligonPx(cp, pts) || minD < 8) {
+   611→            mulai(sh);
+   612→            return;
+   613→          }
+   614→        } else if (minD < 8) {
+   615→          mulai(sh);
+   616→          return;
+   617→        }
+   618→      }
+   619→      if (shapeId) akhiriSesi();
+   620→    };
+   621→
+   622→    const onKey = (e: KeyboardEvent) => {
+   623→      if (e.key === "Escape") useGis.getState().setTool(null);
+   624→    };
+   625→    map.on("click", onKlik);
+   626→    window.addEventListener("keydown", onKey);
+   627→
+   628→    return () => {
+   629→      map.off("click", onKlik);
+   630→      window.removeEventListener("keydown", onKey);
+   631→      window.removeEventListener("geokita-edit-bentuk", onEditEv);
+   632→      akhiriSesi();
+   633→    };
+   634→  }, [tool]);
+   635→
+   636→  // ---------- Render titik ----------
+   637→  useEffect(() => {
+   638→    const l = layerRef.current;
+   639→    if (!l) return;
+   640→    l.points.clearLayers();
+   641→    const renderer = L.canvas({ padding: 0.3 });
+   642→    const cap = Math.min(points.length, RENDER_CAP);
+   643→    for (let i = 0; i < cap; i++) {
+   644→      const p = points[i];
+   645→      const terpilih = selection.includes(p.id);
+   646→      const marker = L.circleMarker([p.lat, p.lng], {
+   647→        renderer,
+   648→        radius: terpilih ? 7 : 5,
+   649→        color: terpilih ? "#f59e0b" : "#1d4ed8",
+   650→        weight: terpilih ? 2.5 : 1.5,
+   651→        fillColor: terpilih ? "#fbbf24" : "#3b82f6",
+   652→        fillOpacity: 0.9,
+   653→      });
+   654→      marker.on("click", () => {
+   655→        const st = useGis.getState();
+   656→        // mode blok: klik titik = pilih/hilangkan satu titik (tanpa popup)
+   657→        if (st.tool === "select") {
+   658→          klikFiturBarusan = true;
+   659→          st.toggleSelect(p.id);
+   660→          return;
+   661→        }
+   662→        if (st.tool === "edit-bentuk") return; // alat edit bentuk: titik diabaikan
+   663→        bukaPopupTitik(mapRef.current!, p, l);
+   664→      });
+   665→      // Label nama sesuai mode: semua / terpilih (bertanda) / sembunyi
+   666→      const labelNyala =
+   667→        labelMode === "semua"
+   668→          ? !!p.title
+   669→          : labelMode === "terpilih"
+   670→            ? !!p.labelTampil && !!p.title
+   671→            : false;
+   672→      if (labelNyala) {
+   673→        marker.bindTooltip(p.title, {
+   674→          permanent: true,
+   675→          direction: "right",
+   676→          offset: [9, 0],
+   677→          className: "geokita-name-label",
+   678→        });
+   679→      }
+   680→      marker.addTo(l.points);
+   681→    }
+   682→  }, [points, selection, labelMode]);
+   683→
+   684→  // ---------- Render poligon & garis ----------
+   685→  useEffect(() => {
+   686→    const l = layerRef.current;
+   687→    if (!l) return;
+   688→    l.shapes.clearLayers();
+   689→    for (const sh of shapes) {
+   690→      if (!sh.visible) continue;
+   691→      const terpilih = selection.includes(sh.id);
+   692→      const latlngs = sh.vertices.map((v) => [v.lat, v.lng] as [number, number]);
+   693→      if (sh.kind === "closed" && latlngs.length >= 3) {
+   694→        const poly = L.polygon(latlngs, {
+   695→          color: terpilih ? "#f59e0b" : sh.color,
+   696→          weight: terpilih ? 3.5 : 2,
+   697→          fillColor: sh.color,
+   698→          fillOpacity: 0.15,
+   699→        });
+   700→        poly.on("click", () => {
+   701→          const st = useGis.getState();
+   702→          if (st.tool === "select") {
+   703→            klikFiturBarusan = true;
+   704→            st.toggleSelect(sh.id);
+   705→            return;
+   706→          }
+   707→          if (st.tool === "edit-bentuk") {
+   708→            // langsung buka sesi edit titik & lengkung untuk bentuk ini
+   709→            window.dispatchEvent(new CustomEvent("geokita-edit-bentuk", { detail: sh.id }));
+   710→            return;
+   711→          }
+   712→          bukaPopupBentuk(mapRef.current!, sh);
+   713→        });
+   714→        const labelNyala =
+   715→          labelMode === "semua"
+   716→            ? !!sh.title
+   717→            : labelMode === "terpilih"
+   718→              ? !!sh.labelTampil && !!sh.title
+   719→              : false;
+   720→        if (labelNyala) {
+   721→          poly.bindTooltip(sh.title, {
+   722→            permanent: true,
+   723→            direction: "center",
+   724→            className: "geokita-name-label",
+   725→          });
+   726→        }
+   727→        poly.addTo(l.shapes);
+   728→      } else if (latlngs.length >= 2) {
+   729→        const line = L.polyline(latlngs, {
+   730→          color: terpilih ? "#f59e0b" : sh.color,
+   731→          weight: terpilih ? 4 : 2.5,
+   732→          dashArray: sh.kind === "open" ? "8 6" : undefined,
+   733→        });
+   734→        line.on("click", () => {
+   735→          const st = useGis.getState();
+   736→          if (st.tool === "select") {
+   737→            klikFiturBarusan = true;
+   738→            st.toggleSelect(sh.id);
+   739→            return;
+   740→          }
+   741→          if (st.tool === "edit-bentuk") {
+   742→            window.dispatchEvent(new CustomEvent("geokita-edit-bentuk", { detail: sh.id }));
+   743→            return;
+   744→          }
+   745→          bukaPopupBentuk(mapRef.current!, sh);
+   746→        });
+   747→        const labelNyala =
+   748→          labelMode === "semua"
+   749→            ? !!sh.title
+   750→            : labelMode === "terpilih"
+   751→              ? !!sh.labelTampil && !!sh.title
+   752→              : false;
+   753→        if (labelNyala) {
+   754→          line.bindTooltip(sh.title, {
+   755→            permanent: true,
+   756→            direction: "center",
+   757→            className: "geokita-name-label",
+   758→          });
+   759→        }
+   760→        line.addTo(l.shapes);
+   761→      }
+   762→    }
+   763→  }, [shapes, selection, labelMode]);
+   764→
+   765→  // ---------- Render label teks ----------
+   766→  useEffect(() => {
+   767→    const l = layerRef.current;
+   768→    if (!l) return;
+   769→    l.labels.clearLayers();
+   770→    for (const lb of labels) {
+   771→      const icon = L.divIcon({
+   772→        className: "",
+   773→        html: `<div class="geokita-label">${escapeHtml(lb.text)}</div>`,
+   774→        iconSize: undefined,
+   775→      });
+   776→      const m = L.marker([lb.lat, lb.lng], { icon });
+   777→      m.on("click", () => {
+   778→        useGis.getState().setDialog("text", { lat: lb.lat, lng: lb.lng, editId: lb.id });
+   779→      });
+   780→      m.addTo(l.labels);
+   781→    }
+   782→  }, [labels]);
+   783→
+   784→  // ---------- Render kontur ----------
+   785→  useEffect(() => {
+   786→    const l = layerRef.current;
+   787→    if (!l) return;
+   788→    l.contours.clearLayers();
+   789→    let eMin = Infinity;
+   790→    let eMax = -Infinity;
+   791→    for (const layer of contours) {
+   792→      for (const p of layer.paths) {
+   793→        if (p.elev < eMin) eMin = p.elev;
+   794→        if (p.elev > eMax) eMax = p.elev;
+   795→      }
+   796→    }
+   797→    const rentang = Math.max(eMax - eMin, 1e-6);
+   798→    for (const layer of contours) {
+   799→      if (!layer.visible) continue;
+   800→      layer.paths.forEach((path, idx) => {
+   801→        const line = L.polyline(
+   802→          path.coords.map((c) => [c.lat, c.lng] as [number, number]),
+   803→          {
+   804→            color: warnaElevasi((path.elev - eMin) / rentang),
+   805→            weight: 1.8,
+   806→            opacity: 0.85,
+   807→          }
+   808→        );
+   809→        line.bindTooltip(`${path.elev} m`, {
+   810→          permanent: idx % 2 === 0,
+   811→          direction: "center",
+   812→          className: "geokita-contour-label",
+   813→        });
+   814→        line.addTo(l.contours);
+   815→      });
+   816→    }
+   817→  }, [contours]);
+   818→
+   819→  // ---------- Gambar sementara (pending & ukur) ----------
+   820→  useEffect(() => {
+   821→    const l = layerRef.current;
+   822→    if (!l) return;
+   823→    l.temp.clearLayers();
+   824→
+   825→    if (pendingVertices.length > 0) {
+   826→      const latlngs = pendingVertices.map((v) => [v.lat, v.lng] as [number, number]);
+   827→      if (tool === "poly-open" && latlngs.length >= 2) {
+   828→        L.polyline(latlngs, { color: "#2563eb", weight: 2.5, dashArray: "6 6" }).addTo(l.temp);
+   829→      }
+   830→      if (tool === "poly-closed" && latlngs.length >= 2) {
+   831→        L.polyline([...latlngs, latlngs[0]], { color: "#2563eb", weight: 1.5, dashArray: "4 8", opacity: 0.6 }).addTo(l.temp);
+   832→        L.polyline(latlngs, { color: "#2563eb", weight: 2.5, dashArray: "6 6" }).addTo(l.temp);
+   833→      }
+   834→      latlngs.forEach((ll) => L.circleMarker(ll, { radius: 4, color: "#1d4ed8", fillColor: "#60a5fa", fillOpacity: 1, weight: 1.5 }).addTo(l.temp));
+   835→    }
+   836→
+   837→    if (measurePoints.length > 0) {
+   838→      const latlngs = measurePoints.map((v) => [v.lat, v.lng] as [number, number]);
+   839→      if (latlngs.length >= 2) {
+   840→        L.polyline(latlngs, { color: "#dc2626", weight: 2.5 }).addTo(l.temp);
+   841→      }
+   842→      measurePoints.forEach((p, i) => {
+   843→        L.circleMarker([p.lat, p.lng], { radius: 4.5, color: "#dc2626", fillColor: "#fca5a5", fillOpacity: 1, weight: 1.5 })
+   844→          .addTo(l.temp);
+   845→        if (i > 0) {
+   846→          const d = jarakHaversine(measurePoints[i - 1], p);
+   847→          L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
+   848→            .setLatLng([p.lat, p.lng])
+   849→            .setContent(fmtMeter(d))
+   850→            .addTo(l.temp);
+   851→        }
+   852→      });
+   853→    }
+   854→  }, [pendingVertices, measurePoints, tool]);
+   855→
+   856→  // ---------- Perintah fly & fit ----------
+   857→  useEffect(() => {
+   858→    if (flyNonce === 0) return;
+   859→    mapRef.current?.flyTo([flyTarget.lat, flyTarget.lng], flyTarget.zoom ?? 16, { duration: 0.6 });
+   860→  }, [flyNonce, flyTarget]);
+   861→
+   862→  useEffect(() => {
+   863→    if (fitNonce === 0) return;
+   864→    const map = mapRef.current;
+   865→    if (!map) return;
+   866→    const semua: [number, number][] = [
+   867→      ...points.map((p) => [p.lat, p.lng] as [number, number]),
+   868→      ...shapes.flatMap((s) => s.vertices.map((v) => [v.lat, v.lng] as [number, number])),
+   869→    ];
+   870→    if (semua.length === 0) return;
+   871→    map.fitBounds(L.latLngBounds(semua).pad(0.15));
+   872→  }, [fitNonce, points, shapes]);
+   873→
+   874→  // Muat ulang ukuran peta saat kembali dari layout
+   875→  useEffect(() => {
+   876→    if (view === "map") {
+   877→      setTimeout(() => mapRef.current?.invalidateSize(), 60);
+   878→    }
+   879→  }, [view]);
+   880→
+   881→  return <div ref={containerRef} className="absolute inset-0 z-0" aria-label="Peta utama" role="application" />;
+   882→}
+   883→
+   884→// ---------- Popup fitur ----------
+   885→
+   886→function escapeHtml(s: string): string {
+   887→  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+   888→}
+   889→
+   890→function bukaPopupTitik(map: L.Map, p: GisPoint, l: LayerMap) {
+   891→  const mapRef0 = map;
+   892→  const el = document.createElement("div");
+   893→  el.className = "space-y-1.5 min-w-[200px]";
+   894→  const attrsHtml = Object.entries(p.attrs)
+   895→    .slice(0, 14)
+   896→    .map(([k, v]) => `<div class="flex gap-2 text-[11px] py-0.5"><span class="text-slate-400 min-w-[80px] max-w-[130px] shrink-0 break-words">${escapeHtml(k)}</span><span class="text-slate-700 break-all">${escapeHtml(v)}</span></div>`)
+   897→    .join("");
+   898→  el.innerHTML = `
+   899→    <div class="font-semibold text-slate-900 text-sm">${escapeHtml(p.title || "Titik")}</div>
+   900→    ${p.description ? `<div class="text-xs text-slate-600 whitespace-pre-line break-words max-h-32 overflow-y-auto scrollbar-halus">${escapeHtml(p.description)}</div>` : ""}
+   901→    ${p.elevation != null ? `<div class="text-xs"><span class="text-slate-400">Elevasi:</span> <b>${p.elevation} m</b></div>` : ""}
+   902→    <div class="text-xs text-slate-500">${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}</div>
+   903→    ${p.photo ? `<img src="${p.photo}" alt="Foto titik" class="rounded-lg max-h-32 w-auto border"/>` : ""}
+   904→    ${attrsHtml ? `<div class="border-t pt-1.5 mt-1 max-h-40 overflow-y-auto scrollbar-halus">${attrsHtml}</div>` : ""}
+   905→    <div class="flex gap-1.5 pt-1">
+   906→      <button data-act="edit" class="flex-1 rounded-lg bg-blue-600 text-white text-xs py-1.5 px-2 hover:bg-blue-700">✏ Edit</button>
+   907→      <button data-act="label" title="Tampil/sembunyikan label nama titik (mode Terpilih)" class="rounded-lg ${p.labelTampil ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-700"} text-xs py-1.5 px-2 hover:brightness-95">🏷</button>
+   908→      <button data-act="zoom" class="rounded-lg bg-slate-100 text-slate-700 text-xs py-1.5 px-2 hover:bg-slate-200">🔍</button>
+   909→      <button data-act="hapus" class="rounded-lg bg-red-50 text-red-600 text-xs py-1.5 px-2 hover:bg-red-100">🗑</button>
+   910→    </div>`;
+   911→  el.querySelector('[data-act="edit"]')?.addEventListener("click", () => {
+   912→    useGis.getState().setDialog("point", { mode: "edit", id: p.id });
+   913→  });
+   914→  el.querySelector('[data-act="label"]')?.addEventListener("click", () => {
+   915→    mapRef0.closePopup();
+   916→    const st = useGis.getState();
+   917→    st.updatePoint(p.id, { labelTampil: !p.labelTampil });
+   918→    toast.success(!p.labelTampil ? "Label titik DITAMPILKAN" : "Label titik DISEMBUNYIKAN", {
+   919→      description: !p.labelTampil
+   920→        ? 'Aktif di mode label "Terpilih". Mode label ada di grup Label pada panel atas.'
+   921→        : "Titik ini tak lagi bertanda tampil pada mode Terpilih.",
+   922→    });
+   923→  });
+   924→  el.querySelector('[data-act="zoom"]')?.addEventListener("click", () => {
+   925→    useGis.getState().flyTo(p.lat, p.lng, 17);
+   926→  });
+   927→  el.querySelector('[data-act="hapus"]')?.addEventListener("click", () => {
+   928→    useGis.getState().deletePoint(p.id);
+   929→  });
+   930→  L.popup({ maxWidth: 360, minWidth: 260 }).setLatLng([p.lat, p.lng]).setContent(el).openOn(map);
+   931→  void l;
+   932→}
+   933→
+   934→function bukaPopupBentuk(map: L.Map | null, sh: GisShape) {
+   935→  if (!map) return;
+   936→  const tengah = sh.vertices.reduce((a, v) => ({ lat: a.lat + v.lat / sh.vertices.length, lng: a.lng + v.lng / sh.vertices.length }), { lat: 0, lng: 0 });
+   937→  const el = document.createElement("div");
+   938→  el.className = "space-y-1.5 min-w-[200px]";
+   939→  const attrsHtml = Object.entries(sh.attrs)
+   940→    .slice(0, 14)
+   941→    .map(([k, v]) => `<div class="flex gap-2 text-[11px] py-0.5"><span class="text-slate-400 min-w-[80px] max-w-[130px] shrink-0 break-words">${escapeHtml(k)}</span><span class="text-slate-700 break-all">${escapeHtml(v)}</span></div>`)
+   942→    .join("");
+   943→  el.innerHTML = `
+   944→    <div class="font-semibold text-slate-900 text-sm">${escapeHtml(sh.title)}</div>
+   945→    <div class="text-xs text-slate-500">${sh.kind === "closed" ? "Poligon tertutup" : "Garis terbuka"} • ${sh.vertices.length} titik</div>
+   946→    ${sh.description ? `<div class="text-xs text-slate-600 whitespace-pre-line break-words max-h-32 overflow-y-auto scrollbar-halus">${escapeHtml(sh.description)}</div>` : ""}
+   947→    ${attrsHtml ? `<div class="border-t pt-1.5 mt-1 max-h-40 overflow-y-auto scrollbar-halus">${attrsHtml}</div>` : ""}
+   948→    <div class="flex flex-wrap gap-1.5 pt-1">
+   949→      <button data-act="edit" class="flex-1 rounded-lg bg-blue-600 text-white text-xs py-1.5 px-2 hover:bg-blue-700">✏ Edit</button>
+   950→      <button data-act="titik" title="Edit titik & lengkungkan ruas (ala AutoCAD)" class="rounded-lg bg-orange-50 text-orange-700 text-xs py-1.5 px-2 hover:bg-orange-100">⬡ Titik</button>
+   951→      <button data-act="label" title="Tampil/sembunyikan label nama bentuk (mode Terpilih)" class="rounded-lg ${sh.labelTampil ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-700"} text-xs py-1.5 px-2 hover:brightness-95">🏷</button>
+   952→      ${sh.kind === "closed" ? `<button data-act="dalam" class="rounded-lg bg-emerald-50 text-emerald-700 text-xs py-1.5 px-2 hover:bg-emerald-100">Titik di dalam</button>` : ""}
+   953→      <button data-act="hapus" class="rounded-lg bg-red-50 text-red-600 text-xs py-1.5 px-2 hover:bg-red-100">🗑</button>
+   954→    </div>`;
+   955→  el.querySelector('[data-act="edit"]')?.addEventListener("click", () => {
+   956→    useGis.getState().setDialog("shapeInfo", { id: sh.id });
+   957→  });
+   958→  el.querySelector('[data-act="titik"]')?.addEventListener("click", () => {
+   959→    map.closePopup();
+   960→    const st = useGis.getState();
+   961→    st.setTool("edit-bentuk");
+   962→    st.setEditBentukId(sh.id);
+   963→  });
+   964→  el.querySelector('[data-act="label"]')?.addEventListener("click", () => {
+   965→    map.closePopup();
+   966→    const st = useGis.getState();
+   967→    st.updateShape(sh.id, { labelTampil: !sh.labelTampil });
+   968→    toast.success(!sh.labelTampil ? "Label bentuk DITAMPILKAN" : "Label bentuk DISEMBUNYIKAN", {
+   969→      description: !sh.labelTampil
+   970→        ? 'Aktif di mode label "Terpilih". Mode label ada di grup Label pada panel atas.'
+   971→        : "Bentuk ini tak lagi bertanda tampil pada mode Terpilih.",
+   972→    });
+   973→  });
+   974→  el.querySelector('[data-act="dalam"]')?.addEventListener("click", () => {
+   975→    const st = useGis.getState();
+   976→    st.setTableFilter(sh.id);
+   977→    st.setDialog("table", true);
+   978→  });
+   979→  el.querySelector('[data-act="hapus"]')?.addEventListener("click", () => {
+   980→    useGis.getState().deleteShape(sh.id);
+   981→  });
+   982→  L.popup({ maxWidth: 360, minWidth: 260 }).setLatLng([tengah.lat, tengah.lng]).setContent(el).openOn(map);
+   983→}
+   984→
