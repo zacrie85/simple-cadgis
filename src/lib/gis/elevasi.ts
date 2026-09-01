@@ -93,8 +93,11 @@ export async function isiElevasiKosong(
   opsi: OpsiElevasi = {}
 ): Promise<HasilIsi> {
   const st0 = useGis.getState();
+  // Set (bukan ids.includes) — pencarian O(1) per titik, aman saat 30rb+ titik
+  // diseleksi dari total ratusan ribu baris
+  const kumpulanId = ids ? new Set(ids) : null;
   const saring = (p: { id: string; elevation?: number | null }) =>
-    p.elevation == null && (!ids || ids.includes(p.id));
+    p.elevation == null && (!kumpulanId || kumpulanId.has(p.id));
   const target = st0.points.filter(saring);
 
   if (target.length === 0) return { diisi: 0, gagal: 0, dibatalkan: false };

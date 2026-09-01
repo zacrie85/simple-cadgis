@@ -171,7 +171,7 @@ export default function Toolbar() {
       nama: "Analisis",
       items: [
         { label: "Ukur", icon: Ruler, title: "Ukur jarak antar titik", onClick: () => setTool("measure"), active: s.tool === "measure" },
-        { label: "Elevasi DEM", icon: MountainSnow, title: "Isi elevasi otomatis semua titik kosong dari DEM satelit (grid ±90 m)", onClick: () => s.setDialog("elevasi", true), active: s.dialogs.elevasi },
+        { label: "Elevasi DEM", icon: MountainSnow, title: "Isi elevasi otomatis dari DEM satelit — semua titik kosong, atau HANYA titik yang di-blok/terpilih (grid ±90 m)", onClick: () => s.setDialog("elevasi", true), active: s.dialogs.elevasi },
         { label: "Kontur", icon: Mountain, title: "Buat kontur dari titik elevasi", onClick: () => s.setDialog("contour", true), active: s.dialogs.contour },
         { label: "Volume", icon: Calculator, title: "Hitung cut & fill / overburden", onClick: () => s.setDialog("volume", true), active: s.dialogs.volume },
         { label: "3D", icon: Box, title: "Tampilan 3D kontur", onClick: () => s.setDialog("view3d", true), active: s.dialogs.view3d },
