@@ -392,3 +392,18 @@ Work Log:
 
 Stage Summary:
 - Simpan/Muat proyek (.cadgis.json) + panel layer dengan kontrol tampil/sembunyikan lengkap + sesi otomatis anti-hilang. Belum di-push (menunggu PAT user; rilis berikutnya v1.3.0).
+
+---
+Task ID: 19 (lanjutan - perbaikan bug toolbar)
+Agent: Super Z (main agent)
+Task: Laporan user — menu toolbar tidak semuanya tampil; grup Navigasi & Contoh terdorong ke pojok kanan, tak terlihat & tak bisa diakses.
+
+Work Log:
+- Diagnosis: sejak Task 19 toolbar bertambah 3 tombol (Simpan/Muat/Layer) → 9 grup / 36 tombol dalam SATU baris overflow-x-auto; grup terakhir keluar layar & scrollbar gulir horizontal tak terlihat.
+- Perbaikan Toolbar.tsx: kontainer ribbon kini flex-wrap mulai layar ≥640px — grup yang tak muat OTOMATIS turun ke baris berikutnya (ala ribbon ArcGIS), tak ada lagi tombol terpotong; lebar tombol diringkas 58px → 54px agar pas 2 baris di layar 1366px; layar HP (<640px) tetap gulir horizontal.
+- Perbaikan MapCanvas.tsx: ResizeObserver pada kontainer peta → map.invalidateSize() otomatis saat tinggi toolbar berubah (wrap/resize jendela/zoom browser), peta tak pernah terpotong/misaligned.
+- Verifikasi browser: 1366×768 → 2 baris rapi (Berkas+Gambar+Pilih / Analisis+Keluaran+Peta+Label+Navigasi+Contoh), 0 dari 36 tombol terpotong, grup Contoh berakhir di x=1138; tombol "Perbesar" (baris 2) berfungsi (zoom 15→16); peta presisi 1366×621 = 768−147 toolbar; 1920×1080 → 2 baris, 0 terpotong; 390×844 (HP) → fallback gulir horizontal bekerja; nol error console; lint bersih; build produksi sukses.
+- Screenshot: download/toolbar-1366-wrap.png, download/toolbar-1920-wrap.png.
+
+Stage Summary:
+- Semua menu toolbar kini SELALU terlihat & bisa diakses di lebar layar apa pun (ribbon 2 baris otomatis). Belum di-push — menyusul bersama rilis v1.3.0 (menunggu PAT user).

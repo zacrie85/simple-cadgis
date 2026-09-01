@@ -153,9 +153,10 @@ export default function MapCanvas() {
 
   // ---------- Inisialisasi peta ----------
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    const el = containerRef.current;
+    if (!el || mapRef.current) return;
 
-    const map = L.map(containerRef.current, {
+    const map = L.map(el, {
       zoomControl: false,
       attributionControl: true,
       center: [-6.994292, 110.4294],
@@ -213,7 +214,13 @@ export default function MapCanvas() {
     // ekspos untuk pengujian otomatis (tidak berpengaruh ke UI)
     (window as unknown as { __geoMap?: L.Map }).__geoMap = map;
 
+    // Tinggi toolbar bisa berubah (ribbon turun 2 baris saat layar sempit, resize jendela,
+    // zoom browser) — ukuran kanvas peta wajib ikut menyesuaikan agar tidak terpotong.
+    const ro = new ResizeObserver(() => map.invalidateSize());
+    ro.observe(el);
+
     return () => {
+      ro.disconnect();
       map.off("moveend zoomend", kirimView);
       window.removeEventListener("geokita-fit-bounds", onFitBounds);
       window.removeEventListener("geokita-zoom", onZoom);

@@ -223,7 +223,9 @@ export default function Toolbar() {
 
   return (
     <header className="relative z-[1000] bg-white border-b border-slate-200 shadow-sm print:hidden">
-      <div className="flex items-stretch gap-0 overflow-x-auto scrollbar-halus px-2">
+      {/* Ribbon: grup yang tak muat lebar layar OTOMATIS turun ke baris berikutnya (seperti ArcGIS),
+          sehingga tidak ada menu yang terpotong di pojok. Di layar HP (<640px) tetap gulir horizontal. */}
+      <div className="flex items-stretch flex-nowrap overflow-x-auto scrollbar-halus px-2 gap-y-1 py-0.5 sm:flex-wrap sm:overflow-x-visible">
         {/* Logo */}
         <div className="flex flex-col items-center justify-center px-3 border-r border-slate-200 mr-1 shrink-0">
           <span className="text-base font-extrabold tracking-tight text-blue-700 leading-none">SIMPLE CADGIS</span>
@@ -244,7 +246,7 @@ export default function Toolbar() {
                   title={item.title ?? item.label}
                   aria-label={item.title ?? item.label}
                   aria-pressed={item.active}
-                  className={`flex flex-col items-center justify-center w-[58px] h-[50px] rounded-lg transition-colors ${
+                  className={`flex flex-col items-center justify-center w-[54px] h-[50px] rounded-lg transition-colors ${
                     item.disabled
                       ? "text-slate-300 cursor-not-allowed"
                       : item.active
