@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useGis } from "@/lib/gis/store";
 import { FloatingWindow } from "../Chips";
 import { ParseStream } from "@/lib/gis/parse-client";
+import { isiElevasiKosong } from "@/lib/gis/elevasi";
 import { bersihkanDeskripsiHtml } from "@/lib/gis/htmlDesc";
 import { parseKolomKoordinat, uid } from "@/lib/gis/geo";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
@@ -44,6 +45,8 @@ export default function ImportDialog() {
   const [kolomLng, setKolomLng] = useState(1);
   const [kolomElev, setKolomElev] = useState(-1);
   const [kolomJudul, setKolomJudul] = useState(-1);
+  // isi elevasi otomatis dari DEM bila file tidak punya kolom elevasi
+  const [isiElevOtomatis, setIsiElevOtomatis] = useState(true);
 
   // Tebak apakah baris pertama berupa header (nama kolom) atau sudah data.
   const tebakGunakanHeader = (rows: string[][]): boolean => {
@@ -278,6 +281,25 @@ export default function ImportDialog() {
         toast.success(`${baru.length.toLocaleString("id-ID")} titik ditambahkan ke peta`, {
           description: gagal > 0 ? `${gagal.toLocaleString("id-ID")} baris dilewati (koordinat tidak valid).` : undefined,
         });
+        // elevasi otomatis dari DEM untuk titik tanpa elevasi (proses latar, dialog boleh ditutup)
+        if (isiElevOtomatis && kolomElev < 0) {
+          const idsKosong = baru.filter((p) => p.elevation == null).map((p) => p.id);
+          if (idsKosong.length > 0) {
+            const t = toast.loading(`Mengambil elevasi DEM untuk ${idsKosong.length.toLocaleString("id-ID")} titik…`);
+            isiElevasiKosong(idsKosong)
+              .then((h) => {
+                toast.dismiss(t);
+                if (h.dibatalkan) toast.warning("Pengambilan elevasi dihentikan", { description: `${h.diisi} titik sudah terisi.` });
+                else if (h.gagal > 0) toast.warning(`Elevasi DEM: ${h.diisi.toLocaleString("id-ID")} titik terisi, ${h.gagal} gagal`, { description: "Ulangi lewat menu Analisis → Elevasi DEM untuk yang belum." });
+                else toast.success(`Elevasi DEM terisi untuk ${h.diisi.toLocaleString("id-ID")} titik`, { description: "Sumber: Copernicus DEM (grid ±90 m)" });
+              })
+              .catch((e) => {
+                console.warn("[impor] gagal isiElevasiKosong:", e);
+                toast.dismiss(t);
+                toast.error("Gagal mengambil elevasi DEM", { description: "Periksa koneksi internet. Ulangi lewat menu Analisis → Elevasi DEM." });
+              });
+          }
+        }
         fitData();
         setFase("selesai");
         setTimeout(tutup, 700);
@@ -494,6 +516,19 @@ export default function ImportDialog() {
                   </span>
                 )}
               </label>
+              {kolomElev < 0 && (
+                <label className="sm:col-span-2 flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-900 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isiElevOtomatis}
+                    onChange={(e) => setIsiElevOtomatis(e.target.checked)}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span>
+                    <b>Isi elevasi otomatis dari DEM satelit</b> — ketinggian diambil dari Copernicus DEM (grid ±90 m) untuk semua titik yang tidak punya elevasi. Butuh internet; akurat untuk kontur &amp; pratinjau, bukan pengganti survei presisi.
+                  </span>
+                </label>
+              )}
               <label className="block">
                 <span className="text-xs font-medium text-slate-500">Kolom judul titik (opsional)</span>
                 <select value={kolomJudul} onChange={(e) => setKolomJudul(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">

@@ -295,3 +295,47 @@ Stage Summary:
 - Label nama fitur kini terkontrol penuh: 3 mode global + tanda per fitur (popup 🏷 / dialog / Tandai massal), konsisten antara peta & Google Earth (KMZ/KML LabelStyle).
 - Alat gambar lengkap ala CAD: bulatan, elips, busur kiri/kanan (setengah lingkaran), dan edit bentuk yang bisa mengubah garis lurus menjadi lengkung (ala Arc/Fillet AutoCAD).
 - Versi 1.1.0 dirilis: web (Pages) & installer Windows otomatis di Releases.
+
+---
+Task ID: 16
+Agent: Super Z (main agent)
+Task: Upgrade menu Berkas → Tabel agar menampilkan SEMUA kolom dari data hasil impor (user: Excel 70–100 kolom, tabel hanya menampilkan ±11 kolom).
+
+Work Log:
+- Akar masalah di DataTableWindow.tsx: kolom atribut dibatasi `Array.from(k).slice(0, 5)` (maks 5 kolom atribut) + sampling baris `rows.slice(0, 500)` → 6 kolom tetap + 5 atribut + Aksi ≈ 11-12 kolom. Data impor Excel sendiri sudah lengkap (ImportDialog menyimpan semua header ke attrs tanpa batas).
+- DataTableWindow.tsx ditulis ulang:
+  1) `semuaKolom` = union semua key attrs dari SEMUA baris, urut kemunculan pertama, TANPA batas jumlah kolom;
+  2) paginasi baris (50/100/200/500 per halaman, default 100) agar DOM tetap ringan dengan ratusan kolom × ribuan baris; reset ke halaman 1 saat filter berubah via pola resmi React "adjust state during render" (aturan react-hooks/set-state-in-effect melarang setState di useEffect);
+  3) kolom identitas (checkbox, Jenis, Judul) sticky kiri + header sticky atas (bg opaque, z-berlapis) sehingga tetap terlihat saat scroll horizontal 80+ kolom;
+  4) panel "Kolom (tampil/total)": cari nama kolom + chip toggle sembunyi/tampil per kolom + tombol Tampilkan semua / Sembunyikan atribut; tombol berubah amber saat ada kolom disembunyikan;
+  5) footer: N baris • M kolom atribut • X dipilih + kontrol halaman (prev/next + select baris/hal);
+  6) lebar jendela tabel diperbesar 64rem → 80rem.
+- Bonus fix bug ekspor Tabel → Excel di ExportDialog.tsx: header sebelumnya hanya dari attrs baris PERTAMA dan `Object.keys(header.slice(5))` menghasilkan indeks "0","1",… (bukan nama kolom) sehingga sel atribut bisa kosong → kini union semua kolom dari semua baris + map per nama kolom.
+- Verifikasi browser end-to-end (agent-browser): buat Excel uji via scripts/buat-uji-80-kolom.mjs (30 baris × 80 kolom, lalu 250 baris) → impor (deteksi otomatis Lat/Lng/Z/Judul benar) → tabel: counter "Kolom (80/80)", 87 th (80 atribut + 7 tetap), kolom terakhir Atribut_79/Atribut_80/Aksi, isi sel benar (Atribut_78-nilai-1); panel kolom: cari "Atribut_1" → 10 chip, sembunyikan 3 → "Kolom (77/80)", Tampilkan semua → 80/80; scroll horizontal 3000px: Jenis & Judul tetap menempel (posisi sticky benar, sel non-sticky lewat di bawah); paginasi: impor 250 baris lagi → 280 baris, Hal 1/3, next → Hal 2/3 mulai TP-071 (sesuai perhitungan), baris/hal 500 → 280 baris dirender Hal 1/1. Nol error console & page. Screenshot: download/uji-tabel-80-kolom.png, download/uji-tabel-paginasi.png.
+- `bun run lint` bersih; `bun run build` produksi sukses (validasi TypeScript penuh).
+
+Stage Summary:
+- Tabel atribut kini menampilkan SEMUA kolom hasil impor (teruji 80 kolom × 280 baris) dengan paginasi baris, kolom identitas menempel saat scroll horizontal, dan panel pilih kolom (cari/sembunyikan/tampilkan).
+- Ekspor Tabel → Excel ikut diperbaiki: semua kolom dari semua baris, sel terisi benar.
+- Belum di-commit/push — menunggu arahan user (push tag vX.Y.Z akan otomatis membangun installer baru & deploy Pages).
+
+---
+Task ID: 17
+Agent: Super Z (main agent)
+Task: Elevasi otomatis dari DEM satelit — jawaban pertanyaan user (OSM/satelit TIDAK punya elevasi; disiapkan sumber DEM Copernicus GLO-90 via Open-Meteo) + implementasi lengkap sesuai pilihan user: cakupan penuh (impor Excel + titik manual + tombol), hanya isi yang kosong, sumber Open-Meteo, catatan akurasi ringkas.
+
+Work Log:
+- Riset & verifikasi API: Open-Meteo Elevation (Copernicus DEM GLO-90, gratis tanpa key, batch 100 koordinat/request, CORS `*` terbuka — diuji langsung: Semarang 0–17 m, Salatiga 101 m). Alternatif Open-Elevation juga hidup (diuji) tapi dipilih Open-Meteo sesuai keputusan user.
+- Modul baru src/lib/gis/elevasi.ts: ambilElevasiDEM (batch 100, 3 percobaan per batch dengan jeda memanjang, koordinat toFixed(6), hasil dibulatkan 0,1 m, onBatch/onProgres/sinyalBatal) + isiElevasiKosong (hanya titik elevation == null, update store per batch via onBatch agar progresif, return {diisi, gagal, dibatalkan}).
+- Bug ditemukan & diperbaiki saat verifikasi: (1) ReferenceError "Cannot access 'hasil' before initialization" — closure onProgres lama menutup variabel `hasil` sebelum inisialisasi selesai (terpicu pola bundler) → refactor: hasil batch disalurkan lewat parameter callback onBatch(mulai, nilai), bukan closure; (2) TS build: elevation?: number | null juga undefined → tipe filter disesuaikan.
+- store.ts: DialogState + DIALOG_AWAL + key `elevasi`.
+- ElevasiDialog.tsx baru (dialog shadcn): ringkasan 3 kartu (total / sudah ada / belum ada), catatan akurasi ringkas (grid ±90 m, bukan pengganti survei presisi, tidak menimpa), progress bar + persen + jumlah gagal, tombol Mulai/Batal/Tutup, hasil akhir + toast.
+- Toolbar: grup Analisis + tombol "Elevasi DEM" (MountainSnow) — aktif biru saat dialog terbuka.
+- ImportDialog: state isiElevOtomatis (default true); checkbox "Isi elevasi otomatis dari DEM satelit" muncul di langkah pemetaan HANYA bila kolom elevasi tidak dipilih; setelah titik ditambah, pengambilan DEM berjalan di latar (toast.loading → toast hasil) sehingga dialog boleh ditutup.
+- FeatureDialogs PointForm: titik manual baru dengan elevasi kosong → fetch DEM 1 titik otomatis setelah simpan (mode edit tidak menimpa; toast "Elevasi DEM: X m").
+- Verifikasi browser end-to-end (agent-browser): impor Excel 10 titik TANPA kolom elevasi (scripts/buat-uji-tanpa-elevasi.mjs) → checkbox DEM tampil tercentang → 10 titik terisi DEM dengan profil topografi ASLI: pesisir 1–11 m → kaki Ungaran 103–174 m → Bawen 354 m → Salatiga 590 m → lereng Merbabu 124 m; titik manual "Uji-Manual" (Bawen utara) → toast "Elevasi DEM: 77 m"; dialog Elevasi DEM: ringkasan 11/10/1 → tombol "Isi 1 Titik" aktif → klik → "Selesai: 1 titik terisi elevasi" + ringkasan 11/11/0; tombol "Semua Terisi" disabled saat tidak ada yang kosong (prinsip tak menimpa terbukti). Nol error console. Screenshot: download/uji-dialog-elevasi-isi.png, download/uji-dialog-elevasi.png.
+- Lint bersih; build produksi sukses setelah fix tipe.
+
+Stage Summary:
+- Elevasi otomatis aktif di 3 jalur: impor Excel (opsi otomatis), titik manual (diam-diam + toast), tombol Analisis → Elevasi DEM (progres + batal). Hanya mengisi yang kosong — data survei tidak pernah ditimpa. Sumber Copernicus DEM GLO-90 via Open-Meteo, gratis tanpa key, batch 100 titik/request dengan retry & pembatalan.
+- Belum di-commit/push — menunggu arahan user (push tag vX.Y.Z akan otomatis membangun installer baru & deploy Pages).

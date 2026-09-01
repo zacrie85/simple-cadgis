@@ -23,6 +23,7 @@ export interface DialogState {
   view3d: boolean;
   table: boolean;
   layoutPanel: boolean;
+  elevasi: boolean;
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -96,6 +97,7 @@ const DIALOG_AWAL: DialogState = {
   view3d: false,
   table: false,
   layoutPanel: false,
+  elevasi: false,
   point: null,
   text: null,
   shapeInfo: null,

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useGis, simpanShapeDariPending } from "@/lib/gis/store";
 import { uid } from "@/lib/gis/geo";
+import { ambilElevasiDEM } from "@/lib/gis/elevasi";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -68,8 +69,9 @@ function PointForm({
     const st = useGis.getState();
     const elev = elevation.trim() === "" ? null : parseFloat(elevation.replace(",", "."));
     if (state.mode === "create") {
+      const idBaru = uid("titik");
       st.addPoint({
-        id: uid("titik"),
+        id: idBaru,
         lat: state.lat,
         lng: state.lng,
         title: title.trim() || "Titik baru",
@@ -81,6 +83,16 @@ function PointForm({
         visible: true,
         labelTampil,
       });
+      // elevasi kosong → ambil otomatis dari DEM satelit (tak menimpa isi manual)
+      if (elev == null || isNaN(elev)) {
+        const judul = title.trim() || "Titik baru";
+        ambilElevasiDEM([{ lat: state.lat, lng: state.lng }]).then(([e]) => {
+          if (e != null) {
+            useGis.getState().updatePoint(idBaru, { elevation: e });
+            toast.info(`Elevasi DEM: ${e} m`, { description: judul });
+          }
+        });
+      }
       toast.success("Titik ditambahkan", { description: title.trim() || "Titik baru" });
     } else {
       st.updatePoint(state.id, {

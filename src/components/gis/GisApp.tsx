@@ -8,6 +8,7 @@ import ExportDialog from "./dialogs/ExportDialog";
 import DataTableWindow from "./dialogs/DataTableWindow";
 import { PointDialog, TextDialog, ShapeInfoDialog } from "./dialogs/FeatureDialogs";
 import { ContourDialog, VolumeDialog } from "./dialogs/AnalysisDialogs";
+import ElevasiDialog from "./dialogs/ElevasiDialog";
 import View3D from "./dialogs/View3D";
 
 // Leaflet & three.js hanya jalan di browser — matikan SSR untuk kedua tampilan ini
@@ -35,6 +36,7 @@ export default function GisApp() {
         <ShapeInfoDialog />
         <ContourDialog />
         <VolumeDialog />
+        <ElevasiDialog />
         <View3D />
       </div>
     </div>
