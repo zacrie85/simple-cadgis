@@ -505,3 +505,21 @@ Work Log:
 
 Stage Summary:
 - Menu Analisis → Elevasi DEM kini punya cakupan "Hanya titik terpilih": blok sebagian titik di peta (atau centang Tabel Data) → buka menu → hanya titik blok yang diunduh DEM-nya — hemat kuota/waktu untuk data 30rb+ titik. Commit 411292e — belum di-push (menyusul rilis v1.3.1 bersama Task 22 & 23).
+
+---
+Task ID: 24-lanjutan (rilis v1.3.1)
+Agent: Super Z (main agent)
+Task: Rilis v1.3.1 — push 7 commit (Task 22, 23, 24) + tag, pantau CI, verifikasi Release.
+
+Work Log:
+- Bersihkan commit asing sandbox (9d4c51d — berisi artefak uji download/uji-grid.xlsx, pesan UUID) via git rebase --onto ef8a48f.
+- .gitignore: blokir download/*.xlsx|*.kmz|*.shp agar artefak uji tak pernah lagi ikut ter-commit (screenshot dokumentasi tetap boleh).
+- package.json 1.3.0 → 1.3.1 (commit 140a35e) + tag beranotasi v1.3.1 (isi: perbaikan stack overflow impor besar, DEM Sekarang/Nanti, kontur Web Worker, cakupan elevasi semua/hanya titik terpilih).
+- Token baru dari user (ghp_*, classic PAT) → validasi API (login zacrie85, remote main asli 9a6cfba; ref origin/main lokal ternyata basi karena push sebelumnya pakai URL eksplisit).
+- Push main (9a6cfba..140a35e, 7 commit) + tag v1.3.1 — output push disaring (sed redact) agar token tak tampil di log.
+- CI: "Deploy ke GitHub Pages" (main) → success; "Build Installer Desktop (Windows)" (v1.3.1) → success (±6 menit polling).
+- Verifikasi: Release "SIMPLE CADGIS v1.3.1" terpublikasi + aset SIMPLE-CADGIS-Setup-1.3.1.exe (±197 MB); Pages https://zacrie85.github.io/simple-cadgis/ HTTP 200.
+
+Stage Summary:
+- RILIS v1.3.1 SELESAI: web (Pages) & installer Windows v1.3.1 berisi 3 penyempurnaan — impor tahan 30rb+ baris, elevasi DEM Sekarang/Nanti + kontur worker latar belakang, dan cakupan elevasi hanya titik terpilih (Blok/Tabel Data).
+- Token ghp_* user dipakai push; sarankan cabut/rotasi (Settings → Developer settings → Personal access tokens).
