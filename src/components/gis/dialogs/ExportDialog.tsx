@@ -98,10 +98,15 @@ export default function ExportDialog() {
 
       // target tabel: seluruh data sesuai filter aktif (seperti export atribut tabel ArcGIS)
       if (format === "xlsx") {
-        const header = ["Jenis", "Judul", "Keterangan", "Koordinat", "Ketinggian", ...Object.keys(pilih[0]?.attrs ?? bentuk[0]?.attrs ?? {})];
+        // gabungkan SEMUA kolom atribut dari SEMUA baris (urut kemunculan pertama) — sama seperti tampilan tabel
+        const kolom: string[] = [];
+        const terlihat = new Set<string>();
+        for (const p of pilih) for (const k of Object.keys(p.attrs)) if (!terlihat.has(k)) { terlihat.add(k); kolom.push(k); }
+        for (const s of bentuk) for (const k of Object.keys(s.attrs)) if (!terlihat.has(k)) { terlihat.add(k); kolom.push(k); }
+        const header = ["Jenis", "Judul", "Keterangan", "Koordinat", "Ketinggian", ...kolom];
         const baris: (string | number)[][] = [
-          ...pilih.map((p) => ["Titik", p.title, p.description, `${p.lat}, ${p.lng}`, p.elevation ?? "", ...Object.keys(header.slice(5)).map((k) => p.attrs[k] ?? "")] as (string | number)[]),
-          ...bentuk.map((s) => ["Garis/Poligon", s.title, s.description, `${s.vertices.length} titik`, "", ...Object.keys(header.slice(5)).map((k) => s.attrs[k] ?? "")] as (string | number)[]),
+          ...pilih.map((p) => ["Titik", p.title, p.description, `${p.lat}, ${p.lng}`, p.elevation ?? "", ...kolom.map((k) => p.attrs[k] ?? "")] as (string | number)[]),
+          ...bentuk.map((s) => ["Garis/Poligon", s.title, s.description, `${s.vertices.length} titik`, "", ...kolom.map((k) => s.attrs[k] ?? "")] as (string | number)[]),
         ];
         await excelTabel(header, baris, `SIMPLE-CADGIS-Tabel-${ts}.xlsx`, "Atribut");
         toast.success("Tabel diekspor ke Excel");
