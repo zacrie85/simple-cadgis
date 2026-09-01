@@ -22,8 +22,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/configure-pages@v5
       - run: bun install
-      # Jika deploy ke sub-path (username.github.io/nama-repo), aktifkan basePath di next.config.ts
+      # Situs dihosting di sub-path (username.github.io/simple-cadgis) —
+      # basePath wajib agar chunk /_next/* tak 404. Build desktop TIDAK
+      # mengeset env ini sehingga tetap di root.
       - run: bun run build
+        env:
+          BASE_PATH: /simple-cadgis
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out
