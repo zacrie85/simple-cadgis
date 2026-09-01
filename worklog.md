@@ -457,3 +457,18 @@ Work Log:
 Stage Summary:
 - RILIS v1.3.0 SELESAI: web (Pages) & installer Windows v1.3.0 di Releases berisi Simpan/Muat proyek + Panel Layer + sesi otomatis, toolbar ribbon 2 baris, layout PDF/PNG, dan menu Bersihkan Semua Data.
 - Token gho_*** dari gh CLI sudah dipakai push; disarankan user cabut/rotasi (Authorized OAuth Apps → GitHub CLI).
+
+---
+Task ID: 22
+Agent: Super Z (main agent)
+Task: Laporan user — impor Excel 30.000 baris gagal "Gagal membaca file: Maximum call stack size exceeded".
+
+Work Log:
+- Akar masalah: pola spread-ke-argumen-fungsi (`push(...arr)` / `Math.min(...arr)`) melempar RangeError saat array mencapai puluhan ribu elemen (limit argumen V8 ±65 ribu). Excel 30rb baris dengan sharedStrings padat membuat buffer `<si>` per-chunk menumpuk puluhan ribu entri → `sst.push(...sisaSst)` di parse-worker PASS 1 meledak → error tertangkap try/catch worker → toast "Gagal membaca file".
+- Perbaikan 5 file: parse-worker.ts (2× push spread → loop), ImportDialog.tsx (onRows spread → loop; +Math.max sampel dibiarkan—bounded 50), AnalysisDialogs.tsx (eMin/eMax Math.min/max(...30rb) → reduce — bug bom-waktu yang akan meledak saat buka dialog Kontur dengan 30rb titik berelevasi), View3D.tsx (info elevasi kontur → reduce), shapefile.ts (kumpul verteks → loop bertingkat).
+- Uji end-to-end (agent-browser): generator scripts/buat-uji-30k.ts (bun+xlsx) membuat uji-30k.xlsx 30.000 baris 9 MB sharedStrings padat → upload via DataTransfer → "30.000 baris data berhasil dibaca" (di titik ini dulu gagal) → deteksi kolom otomatis benar (Koordinat + Elevasi (m)) → Tambahkan Titik ke Peta → layer "uji-30k: 30.000 titik • 0 bentuk" → dialog Kontur terbuka normal "Titik berketinggian tersedia: 30000" tanpa crash → zoom peta responsif (0,3 ms) → render canvas 30k titik rapi (screenshot download/impor-30k-berhasil.png) → nol error console (hanya warning a11y DialogContent lama).
+- Catatan perilaku desain: sesi otomatis (localStorage) gagal senyap utk data 30rb titik (lebih kuota ±5MB) — sudah ada fallback, tidak crash.
+- File uji public/uji-30k.xlsx dihapus sebelum commit; tool-results/ masuk .gitignore; lint + tsc + build produksi bersih.
+
+Stage Summary:
+- Impor Excel/CSV/KML/KMZ kini tahan file 30rb+ baris (batas desain 300rb baris / 50rb fitur). Bom-waktu dialog Kontur & 3D dengan data besar ikut dipadamkan. Commit a23a1e8 — belum di-push, menyusul rilis v1.3.1 (menunggu konfirmasi user / token).
