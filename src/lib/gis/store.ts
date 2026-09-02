@@ -10,6 +10,7 @@ import type {
   LabelMode,
   LatLng,
   ProyekData,
+  RasterLayer,
   ToolMode,
 } from "./types";
 import { uid } from "./geo";
@@ -57,6 +58,7 @@ export interface DialogState {
   bersih: boolean;
   poligonTitik: boolean;
   optimasi: boolean;
+  raster: boolean;
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -105,6 +107,7 @@ interface GisStore {
   addPoint: (p: GisPoint) => void;
   addPoints: (ps: GisPoint[]) => void;
   updatePoint: (id: string, patch: Partial<GisPoint>) => void;
+  isiElevasiMassal: (entri: { id: string; elevation: number }[]) => void;
   deletePoint: (id: string) => void;
 
   addShape: (s: GisShape) => void;
@@ -118,6 +121,13 @@ interface GisStore {
   addContours: (c: ContourLayer) => void;
   removeContours: (id: string) => void;
   toggleContourVisible: (id: string) => void;
+
+  // ---------- Raster (GeoTIFF overlay / DEM lokal — hanya memori) ----------
+  rasters: RasterLayer[];
+  tambahRaster: (r: RasterLayer) => void;
+  hapusRaster: (id: string) => void;
+  setRasterTerlihat: (id: string, terlihat: boolean) => void;
+  setRasterOpasitas: (id: string, opasitas: number) => void;
 
   // ---------- Layer ----------
   tambahLayer: (nama: string) => string;
@@ -177,6 +187,7 @@ const DIALOG_AWAL: DialogState = {
   bersih: false,
   poligonTitik: false,
   optimasi: false,
+  raster: false,
   point: null,
   text: null,
   shapeInfo: null,
@@ -291,6 +302,18 @@ export const useGis = create<GisStore>((set, get) => ({
     set((st) => ({
       points: st.points.map((p) => (p.id === id ? { ...p, ...patch } : p)),
     })),
+  // isi elevasi RIBUAN titik sekaligus (satu update store — bukan per titik)
+  isiElevasiMassal: (entri) =>
+    set((st) => {
+      if (entri.length === 0) return st;
+      const peta = new Map(entri.map((e) => [e.id, e.elevation]));
+      return {
+        points: st.points.map((p) => {
+          const e = peta.get(p.id);
+          return e !== undefined && p.elevation == null ? { ...p, elevation: e } : p;
+        }),
+      };
+    }),
   deletePoint: (id) =>
     set((st) => ({
       points: st.points.filter((p) => p.id !== id),
@@ -317,6 +340,20 @@ export const useGis = create<GisStore>((set, get) => ({
   deleteLabel: (id) => set((st) => ({ labels: st.labels.filter((l) => l.id !== id) })),
 
   addContours: (c) => set((st) => ({ contours: [...st.contours, c] })),
+
+  // ---------- Raster ----------
+  rasters: [],
+  tambahRaster: (r) => set((st) => ({ rasters: [...st.rasters, r] })),
+  hapusRaster: (id) =>
+    set((st) => {
+      const lama = st.rasters.find((r) => r.id === id);
+      if (lama?.gambarUrl) URL.revokeObjectURL(lama.gambarUrl);
+      return { rasters: st.rasters.filter((r) => r.id !== id) };
+    }),
+  setRasterTerlihat: (id, terlihat) =>
+    set((st) => ({ rasters: st.rasters.map((r) => (r.id === id ? { ...r, terlihat } : r)) })),
+  setRasterOpasitas: (id, opasitas) =>
+    set((st) => ({ rasters: st.rasters.map((r) => (r.id === id ? { ...r, opasitas } : r)) })),
   removeContours: (id) => set((st) => ({ contours: st.contours.filter((c) => c.id !== id) })),
   toggleContourVisible: (id) =>
     set((st) => ({

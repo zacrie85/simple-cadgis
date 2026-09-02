@@ -153,6 +153,7 @@ export default function MapCanvas() {
   // tanpa membangun ulang puluhan ribu marker setiap seleksi/urutan berubah.
   const markerTitikRef = useRef<Map<string, L.CircleMarker>>(new Map());
   const gayaTitikRef = useRef<Map<string, { sel: boolean; urut: boolean }>>(new Map());
+  const rasterRef = useRef<Map<string, L.ImageOverlay>>(new Map());
 
   const points = useGis((s) => s.points);
   const shapes = useGis((s) => s.shapes);
@@ -209,6 +210,13 @@ export default function MapCanvas() {
       contours: L.layerGroup().addTo(map),
       temp: L.layerGroup().addTo(map),
     };
+
+    // pane khusus raster georeferensi: DI BAWAH fitur titik/garis (overlayPane 400),
+    // DI ATAS basemap tile (tilePane 200) — dan tak menghalangi klik
+    map.createPane("raster-pane");
+    const pane = map.getPane("raster-pane")!;
+    pane.style.zIndex = "350";
+    pane.style.pointerEvents = "none";
 
     map.on("click", (e: L.LeafletMouseEvent) => {
       useGis.getState().mapClick(e.latlng.lat, e.latlng.lng);
@@ -966,6 +974,37 @@ export default function MapCanvas() {
       });
     }
   }, [contours]);
+
+  // ---------- Raster georeferensi (GeoTIFF overlay / DEM lokal) ----------
+  const rasters = useGis((s) => s.rasters);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const daftar = rasterRef.current;
+    const idAktif = new Set(rasters.map((r) => r.id));
+    // hapus yang sudah tidak ada
+    for (const [id, ov] of daftar) {
+      if (!idAktif.has(id)) {
+        map.removeLayer(ov);
+        daftar.delete(id);
+      }
+    }
+    for (const r of rasters) {
+      let ov = daftar.get(r.id);
+      if (ov) {
+        ov.setOpacity(r.terlihat ? r.opasitas : 0);
+      } else {
+        ov = L.imageOverlay(r.gambarUrl, L.latLngBounds([r.selatan, r.barat], [r.utara, r.timur]), {
+          opacity: r.terlihat ? r.opasitas : 0,
+          pane: "raster-pane",
+          interactive: false,
+          className: "geokita-raster",
+        });
+        ov.addTo(map);
+        daftar.set(r.id, ov);
+      }
+    }
+  }, [rasters]);
 
   // ---------- Gambar sementara (pending & ukur) ----------
   useEffect(() => {

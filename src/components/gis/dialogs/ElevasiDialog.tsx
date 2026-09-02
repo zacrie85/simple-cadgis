@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGis } from "@/lib/gis/store";
 import { isiElevasiKosong, type HasilIsi } from "@/lib/gis/elevasi";
+import { elevasiDariRaster, batalElevasiRaster } from "@/lib/gis/raster";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { MountainSnow, LoaderCircle, Info, Play, XCircle, SquareDashedMousePointer } from "lucide-react";
+import { MountainSnow, LoaderCircle, Info, Play, XCircle, SquareDashedMousePointer, Satellite, FileImage } from "lucide-react";
 
 type Cakupan = "semua" | "terpilih";
+type Sumber = "online" | "lokal";
 
 /** Dialog pengisian elevasi otomatis dari DEM satelit (Copernicus GLO-90 via Open-Meteo).
  *  Hanya mengisi titik yang elevasinya masih kosong — data survei tidak ditimpa.
@@ -19,11 +21,16 @@ export default function ElevasiDialog() {
   const setDialog = useGis((s) => s.setDialog);
   const points = useGis((s) => s.points);
   const selection = useGis((s) => s.selection);
+  const rasters = useGis((s) => s.rasters);
+  const demRasters = useMemo(() => rasters.filter((r) => r.dem), [rasters]);
 
   const [jalan, setJalan] = useState(false);
   const [progres, setProgres] = useState({ selesai: 0, total: 0, gagal: 0 });
   const [hasil, setHasil] = useState<HasilIsi | null>(null);
+  const [luar, setLuar] = useState(0); // titik di luar cakupan DEM lokal
   const [cakupan, setCakupan] = useState<Cakupan>("semua");
+  const [sumber, setSumber] = useState<Sumber>("online");
+  const [demId, setDemId] = useState<string>("");
   const sinyalBatal = useRef({ dibatalkan: false });
 
   // jumlah titik tanpa elevasi — loop (bukan filter spread) hemat memori utk 30rb+ titik
@@ -47,7 +54,8 @@ export default function ElevasiDialog() {
   }, [points, selection]);
 
   // default cerdas tiap kali dialog DIBUKA: bila ada titik terpilih yang masih
-  // kosong elevasinya → langsung fokus ke "Hanya titik terpilih"
+  // kosong elevasinya → langsung fokus ke "Hanya titik terpilih"; sumber DEM:
+  // lokal bila tersedia, selain itu online
   const terbuka = useRef(false);
   useEffect(() => {
     if (open && !terbuka.current) {
@@ -59,6 +67,15 @@ export default function ElevasiDialog() {
       }
       setCakupan(kosong > 0 ? "terpilih" : "semua");
       setHasil(null);
+      setLuar(0);
+      const demTersedia = st.rasters.filter((r) => r.dem);
+      if (demTersedia.length > 0) {
+        setSumber("lokal");
+        setDemId(demTersedia[0].id);
+      } else {
+        setSumber("online");
+        setDemId("");
+      }
     }
     terbuka.current = open;
   }, [open]);
@@ -70,7 +87,10 @@ export default function ElevasiDialog() {
   const targetKosong = cakupan === "terpilih" ? infoTerpilih.kosong : tanpaElev;
 
   const tutup = () => {
-    if (jalan) sinyalBatal.current.dibatalkan = true;
+    if (jalan) {
+      sinyalBatal.current.dibatalkan = true;
+      batalElevasiRaster();
+    }
     setDialog("elevasi", false);
   };
 
@@ -96,8 +116,66 @@ export default function ElevasiDialog() {
     const total = cakupan === "terpilih" ? infoTerpilih.kosong : tanpaElev;
     setJalan(true);
     setHasil(null);
+    setLuar(0);
     setProgres({ selesai: 0, total, gagal: 0 });
     sinyalBatal.current = { dibatalkan: false };
+
+    // ====== SUMBER LOKAL: DEM GeoTIFF yang diimpor (tanpa internet) ======
+    if (sumber === "lokal") {
+      const dem = useGis.getState().rasters.find((r) => r.id === demId) ?? demRasters[0];
+      if (!dem) {
+        toast.error("DEM lokal tidak ditemukan", { description: "Impor ulang file DEM-nya di menu Berkas → Raster." });
+        setJalan(false);
+        return;
+      }
+      try {
+        const kumpulan = ids ? new Set(ids) : null;
+        const daftar: { id: string; lat: number; lng: number }[] = [];
+        for (const p of points) {
+          if (p.elevation == null && (!kumpulan || kumpulan.has(p.id))) daftar.push({ id: p.id, lat: p.lat, lng: p.lng });
+        }
+        const nilai = await elevasiDariRaster(
+          dem.id,
+          daftar.map((d) => ({ lat: d.lat, lng: d.lng })),
+          {
+            onProgres: (p) => setProgres({ selesai: Math.round((p.persen / 100) * total), total, gagal: 0 }),
+            sinyalBatal: sinyalBatal.current,
+          }
+        );
+        if (sinyalBatal.current.dibatalkan) {
+          setHasil({ diisi: 0, gagal: daftar.length, dibatalkan: true });
+          toast.warning("Pengambilan elevasi dibatalkan");
+          return;
+        }
+        const entri: { id: string; elevation: number }[] = [];
+        let diLuar = 0;
+        nilai.forEach((v, i) => {
+          if (v != null) entri.push({ id: daftar[i].id, elevation: v });
+          else diLuar++;
+        });
+        useGis.getState().isiElevasiMassal(entri);
+        setLuar(diLuar);
+        const h: HasilIsi = { diisi: entri.length, gagal: 0, dibatalkan: false };
+        setHasil(h);
+        if (cakupan === "terpilih")
+          toast.success(`${entri.length} titik terpilih terisi elevasi dari DEM lokal`, {
+            description: diLuar > 0 ? `${diLuar} titik berada di luar cakupan DEM "${dem.nama}".` : `Sumber: ${dem.nama}`,
+          });
+        else
+          toast.success(`${entri.length} titik terisi elevasi dari DEM lokal`, {
+            description: diLuar > 0 ? `${diLuar} titik berada di luar cakupan DEM "${dem.nama}".` : `Sumber: ${dem.nama}`,
+          });
+      } catch (err) {
+        const pesan = err instanceof Error ? err.message : "Gagal membaca DEM lokal.";
+        if (sinyalBatal.current.dibatalkan || pesan.includes("dibatalkan")) toast.warning("Pengambilan elevasi dibatalkan");
+        else toast.error("Gagal mengambil elevasi dari DEM lokal", { description: pesan, duration: 10000 });
+      } finally {
+        setJalan(false);
+      }
+      return;
+    }
+
+    // ====== SUMBER ONLINE: Copernicus via Open-Meteo ======
     try {
       const h = await isiElevasiKosong(ids, {
         sinyalBatal: sinyalBatal.current,
@@ -140,6 +218,69 @@ export default function ElevasiDialog() {
               <p className="text-[11px] text-amber-600">belum ada</p>
             </div>
           </div>
+
+          {/* pilihan sumber DEM: muncul bila ada raster DEM lokal yang diimpor */}
+          {demRasters.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sumber elevasi</p>
+              <label
+                className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${
+                  sumber === "lokal" ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:bg-slate-50"
+                } ${jalan ? "pointer-events-none opacity-70" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="sumber-elevasi"
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                  checked={sumber === "lokal"}
+                  onChange={() => setSumber("lokal")}
+                />
+                <span className="text-sm min-w-0">
+                  <b className="flex items-center gap-1.5">
+                    <FileImage className="h-3.5 w-3.5" /> File DEM lokal (tanpa internet)
+                  </b>
+                  <span className="block text-xs text-slate-500 truncate">
+                    {demRasters.length === 1
+                      ? `${demRasters[0].nama} — ${demRasters[0].resolusiLabel}`
+                      : `${demRasters.length} DEM lokal tersedia`}
+                  </span>
+                  {sumber === "lokal" && demRasters.length > 1 && (
+                    <select
+                      value={demId}
+                      onChange={(e) => setDemId(e.target.value)}
+                      disabled={jalan}
+                      className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    >
+                      {demRasters.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.nama} ({r.resolusiLabel})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </span>
+              </label>
+              <label
+                className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${
+                  sumber === "online" ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:bg-slate-50"
+                } ${jalan ? "pointer-events-none opacity-70" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="sumber-elevasi"
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                  checked={sumber === "online"}
+                  onChange={() => setSumber("online")}
+                />
+                <span className="text-sm">
+                  <b className="flex items-center gap-1.5">
+                    <Satellite className="h-3.5 w-3.5" /> DEM Satelit (Online)
+                  </b>
+                  <span className="block text-xs text-slate-500">Copernicus GLO-90 • grid ±90 m • butuh internet</span>
+                </span>
+              </label>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cakupan pengisian</p>
@@ -201,12 +342,21 @@ export default function ElevasiDialog() {
 
           <p className="flex items-start gap-2 rounded-xl bg-blue-50 text-blue-900 text-xs px-3 py-2">
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>
-              Ketinggian diambil otomatis dari <b>DEM Copernicus (grid ±90 m)</b> via Open-Meteo —
-              gratis, untuk seluruh bumi. Hanya titik <b>yang masih kosong</b> yang diisi;
-              elevasi hasil survei/m impor <b>tidak ditimpa</b>. Cocok untuk kontur &amp; pratinjau,
-              bukan pengganti survei presisi.
-            </span>
+            {sumber === "lokal" ? (
+              <span>
+                Elevasi diambil <b>langsung dari file DEM lokal</b> yang diimpor (menu Berkas → Raster) —
+                akurat sesuai resolusi DEM, <b>tanpa internet</b>. Hanya titik yang masih kosong yang diisi;
+                titik di luar cakupan DEM tidak terisi.
+              </span>
+            ) : (
+              <span>
+                Ketinggian diambil otomatis dari <b>DEM Copernicus (grid ±90 m)</b> via Open-Meteo —
+                gratis, untuk seluruh bumi. Hanya titik <b>yang masih kosong</b> yang diisi;
+                elevasi hasil survei/m impor <b>tidak ditimpa</b>. Cocok untuk kontur &amp; pratinjau,
+                bukan pengganti survei presisi. Ingin pakai DEM sendiri? Impor GeoTIFF di menu
+                <b> Berkas → Raster</b>.
+              </span>
+            )}
           </p>
 
           {jalan && (
@@ -225,6 +375,7 @@ export default function ElevasiDialog() {
           {hasil && !jalan && (
             <p className={`rounded-xl px-3 py-2 text-xs ${hasil.gagal === 0 ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
               Selesai: <b>{hasil.diisi.toLocaleString("id-ID")}</b> titik terisi elevasi
+              {luar > 0 && <>, <b>{luar.toLocaleString("id-ID")}</b> di luar cakupan DEM lokal</>}
               {hasil.dibatalkan
                 ? <> — <b>{hasil.gagal.toLocaleString("id-ID")}</b> titik belum diproses karena dibatalkan (bisa dilanjutkan kapan saja)</>
                 : hasil.gagal > 0 && <>, <b>{hasil.gagal.toLocaleString("id-ID")}</b> gagal (coba lagi untuk mengulang yang belum)</>}
@@ -234,7 +385,14 @@ export default function ElevasiDialog() {
 
         <div className="flex gap-2 justify-end">
           {jalan ? (
-            <Button variant="outline" className="rounded-xl" onClick={() => (sinyalBatal.current.dibatalkan = true)}>
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              onClick={() => {
+                sinyalBatal.current.dibatalkan = true;
+                batalElevasiRaster();
+              }}
+            >
               <XCircle className="h-4 w-4" /> Batal
             </Button>
           ) : (

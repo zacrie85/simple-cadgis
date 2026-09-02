@@ -12,6 +12,7 @@ import { ContourDialog, VolumeDialog } from "./dialogs/AnalysisDialogs";
 import ElevasiDialog from "./dialogs/ElevasiDialog";
 import PoligonTitikDialog from "./dialogs/PoligonTitikDialog";
 import OptimasiDialog from "./dialogs/OptimasiDialog";
+import RasterDialog from "./dialogs/RasterDialog";
 import View3D from "./dialogs/View3D";
 import LayerPanel from "./dialogs/LayerPanel";
 import {
@@ -60,6 +61,7 @@ export default function GisApp() {
         <ElevasiDialog />
         <PoligonTitikDialog />
         <OptimasiDialog />
+        <RasterDialog />
         <View3D />
         <LayerPanel />
         <SimpanProyekDialog />

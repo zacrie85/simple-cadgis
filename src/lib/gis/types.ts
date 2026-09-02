@@ -13,6 +13,27 @@ export interface GisLayer {
   dibuat: number; // epoch ms
 }
 
+/** Layer raster georeferensi (GeoTIFF): overlay orthophoto/citra atau DEM.
+ *  Gambar pratinjau berada di memori (objectURL) — TIDAK ikut simpan proyek. */
+export interface RasterLayer {
+  id: string;
+  nama: string;
+  terlihat: boolean;
+  opasitas: number; // 0..1
+  gambarUrl: string; // objectURL PNG/JPEG pratinjau dari worker
+  barat: number;
+  timur: number;
+  selatan: number;
+  utara: number;
+  lebarPx: number;
+  tinggiPx: number;
+  sumberCrs: string; // label CRS sumber, mis. "EPSG:4326 (WGS84)"
+  dem: boolean; // raster 1 band → dapat dipakai sumber elevasi lokal
+  resolusiLabel: string; // mis. "±0,70 m/piksel"
+  ukuranFileMb: number;
+  dibuat: number; // epoch ms
+}
+
 export interface GisPoint {
   id: string;
   lat: number;
