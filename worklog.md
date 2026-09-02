@@ -591,3 +591,17 @@ Work Log:
 Stage Summary:
 - RILIS v1.3.2 SELESAI: web (Pages) & installer Windows v1.3.2 berisi poligon/garis otomatis dari titik terpilih (menu Gambar > Dari Titik, tertutup/terbuka) + menu PERFORMA > Optimasi (mode ringan sekali klik, batas render/label, bersihkan cache) + render inkremental & autosave pintar.
 - Token ghp_* user dipakai push; ingatkan user mencabut token setelah sesi.
+
+---
+Task ID: 28
+Agent: Super Z (main agent)
+Task: Bug dari user — hasil poligon (Dari Titik) saat diekspor ke KMZ/KML gagal dibuka: "Parse error at line 5, column 25: not well-formed (invalid token)".
+
+Work Log:
+- Diagnosa: kml.ts menulis nama folder literal "Poligon & Garis" TANPA escape — '&' mentah adalah token XML invalid. Skenario "Ekspor Poligon" (shapes saja, tanpa titik) menempatkan folder itu tepat baris 5 kolom 25 = persis error Google Earth. Sebelumnya tak pernah kena karena folder ini hanya muncul bila ada shapes (mulai Task 26).
+- Perbaikan: bangunKML membungkus nama folder lewat escXml (semua nama user & dokumen memang sudah di-escape; hanya folder statis ini yang lolos). Skrip uji regresi scripts/uji-kml.ts: 11 cek — baris 5 &amp;, tanpa '&' mentah di luar CDATA (shapes-only, gabungan, doc.kml dalam KMZ), escape judul/ExtendedData berisi & < > ", ring tertutup kembali ke titik pertama, garis terbuka pakai LineString tanpa Polygon. Catatan: '&' mentah DI DALAM CDATA (deskripsi) itu sah XML — validator di-adjust.
+- tsc + lint bersih; 11/11 uji lulus.
+- Push 0bcae69 → "Deploy ke GitHub Pages" success (±90 detik). Installer desktop v1.3.2 masih berisi bug (perbaikan masuk rilis berikutnya bila user mau v1.3.3).
+
+Stage Summary:
+- Bug ekspor KMZ/KML poligon DIPERBAIKI dan sudah live di Pages. Uji regresi permanen di scripts/uji-kml.ts. Belum ada tag baru (opsi v1.3.3 menunggu konfirmasi user).
