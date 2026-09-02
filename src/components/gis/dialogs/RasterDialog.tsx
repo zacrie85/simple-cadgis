@@ -27,6 +27,7 @@ import {
   Eye,
   EyeOff,
   TriangleAlert,
+  Download,
 } from "lucide-react";
 
 const UKURAN_MAKS = 500 * 1024 * 1024; // 500 MB
@@ -68,7 +69,7 @@ export default function RasterDialog() {
     if (nama.endsWith(".ecw")) {
       toast.error("Format ECW tidak didukung browser", {
         description:
-          "Tidak ada dekoder ECW untuk aplikasi web (lisensi proprietary). Konversi dulu ke GeoTIFF via QGIS: Raster → Conversion → Translate (GTiff), lalu impor hasilnya di sini.",
+          "Tidak ada dekoder ECW untuk aplikasi web (lisensi proprietary). Gunakan tombol “Skrip ECW Bridge” di dialog ini untuk konversi otomatis via QGIS.",
         duration: 12000,
       });
       return;
@@ -209,15 +210,31 @@ export default function RasterDialog() {
             </div>
           )}
 
-          {/* peringatan ECW */}
-          <p className="flex items-start gap-2 rounded-xl bg-amber-50 text-amber-900 text-xs px-3 py-2">
-            <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>
-              <b>ECW:</b> format proprietary — tidak ada dekoder untuk browser, jadi file .ecw tidak bisa
-              dibuka langsung. Konversi dulu ke GeoTIFF lewat <b>QGIS (gratis)</b>: Raster → Conversion →
-              Translate, format <i>GTiff</i>.
-            </span>
-          </p>
+          {/* peringatan ECW + jembatan konversi */}
+          <div className="rounded-xl bg-amber-50 text-amber-900 text-xs px-3 py-2.5 space-y-2">
+            <p className="flex items-start gap-2">
+              <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                <b>ECW:</b> format proprietary — tidak ada dekoder untuk browser, jadi file .ecw tidak bisa
+                dibuka langsung. Jalan resmi &amp; legal: konversi sekali lewat <b>QGIS (gratis)</b> memakai
+                skrip otomatis di bawah ini — hasilnya .tif yang langsung terbaca di sini.
+              </span>
+            </p>
+            <a
+              href="ecw-bridge-qgis.py"
+              download="ECW-Bridge-SIMPLE-CADGIS.py"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Skrip ECW Bridge (.py)
+            </a>
+            <ol className="list-decimal ml-4 space-y-0.5 text-amber-800">
+              <li>Buka QGIS → menu <b>Plugins → Python Console</b></li>
+              <li>Klik <b>Show Editor</b> → <b>Open Script</b> → pilih file ini → <b>Run</b></li>
+              <li>Pilih file .ecw (bisa banyak sekaligus) → pilih folder hasil → selesai</li>
+              <li>Impor hasil .tif ke dialog ini</li>
+            </ol>
+          </div>
 
           {/* daftar raster terimpor */}
           {rasters.length > 0 && (
