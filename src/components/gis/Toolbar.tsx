@@ -36,6 +36,7 @@ import {
   Tags,
   Tag,
   EyeOff,
+  Waypoints,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -136,6 +137,7 @@ export default function Toolbar() {
         { label: "Titik", icon: MapPin, title: "Tambah titik koordinat (klik peta)", onClick: () => setTool("point"), active: s.tool === "point" },
         { label: "Poligon", icon: Hexagon, title: "Poligon tertutup (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-closed"), active: s.tool === "poly-closed" },
         { label: "Garis", icon: Minus, title: "Poligon/garis terbuka (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-open"), active: s.tool === "poly-open" },
+        { label: "Dari Titik", icon: Waypoints, title: "Buat poligon/garis otomatis dari titik yang sudah ada — pilih titik satu per satu (urutan pilihan = urutan sambungan), lewat daftar, input nomor, atau klik di peta", onClick: () => s.setDialog("poligonTitik", true), active: s.dialogs.poligonTitik },
         { label: "Teks", icon: Type, title: "Tambah label teks (klik peta)", onClick: () => setTool("text"), active: s.tool === "text" },
         { label: "Bulatan", icon: Circle, title: "Buat lingkaran — klik pusat, lalu klik radius", onClick: () => setTool("bulatan"), active: s.tool === "bulatan" },
         { label: "Elips", icon: Egg, title: "Buat elips — klik pusat, lalu klik jangkauan (kanan-atas)", onClick: () => setTool("elips"), active: s.tool === "elips" },

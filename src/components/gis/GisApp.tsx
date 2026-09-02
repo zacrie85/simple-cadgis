@@ -9,6 +9,7 @@ import DataTableWindow from "./dialogs/DataTableWindow";
 import { PointDialog, TextDialog, ShapeInfoDialog } from "./dialogs/FeatureDialogs";
 import { ContourDialog, VolumeDialog } from "./dialogs/AnalysisDialogs";
 import ElevasiDialog from "./dialogs/ElevasiDialog";
+import PoligonTitikDialog from "./dialogs/PoligonTitikDialog";
 import View3D from "./dialogs/View3D";
 import LayerPanel from "./dialogs/LayerPanel";
 import {
@@ -47,6 +48,7 @@ export default function GisApp() {
         <ContourDialog />
         <VolumeDialog />
         <ElevasiDialog />
+        <PoligonTitikDialog />
         <View3D />
         <LayerPanel />
         <SimpanProyekDialog />

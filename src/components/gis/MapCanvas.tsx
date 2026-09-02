@@ -141,6 +141,9 @@ export default function MapCanvas() {
   const contours = useGis((s) => s.contours);
   const layers = useGis((s) => s.layers);
   const selection = useGis((s) => s.selection);
+  const urutanPoligon = useGis((s) => s.urutanPoligon);
+  const jenisPoligonTitik = useGis((s) => s.jenisPoligonTitik);
+  const dialogPoligonTitik = useGis((s) => s.dialogs.poligonTitik);
   const basemap = useGis((s) => s.basemap);
   const labelMode = useGis((s) => s.labelMode);
   const pendingVertices = useGis((s) => s.pendingVertices);
@@ -248,8 +251,8 @@ export default function MapCanvas() {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    el.style.cursor = tool ? "crosshair" : "";
-  }, [tool]);
+    el.style.cursor = tool || dialogPoligonTitik ? "crosshair" : "";
+  }, [tool, dialogPoligonTitik]);
 
   // ---------- Alat blok seleksi & zoom kotak (drag persegi) ----------
   useEffect(() => {
@@ -663,21 +666,29 @@ export default function MapCanvas() {
     if (!l) return;
     l.points.clearLayers();
     const renderer = L.canvas({ padding: 0.3 });
+    // titik dalam urutan poligon "Dari Titik" ditandai hijau
+    const urutanSet = new Set(urutanPoligon);
     const cap = Math.min(points.length, RENDER_CAP);
     for (let i = 0; i < cap; i++) {
       const p = points[i];
       if (!p.visible) continue; // disembunyikan per fitur / per layer
       const terpilih = selection.includes(p.id);
+      const dalamUrutan = urutanSet.has(p.id);
       const marker = L.circleMarker([p.lat, p.lng], {
         renderer,
-        radius: terpilih ? 7 : 5,
-        color: terpilih ? "#f59e0b" : "#1d4ed8",
-        weight: terpilih ? 2.5 : 1.5,
-        fillColor: terpilih ? "#fbbf24" : "#3b82f6",
+        radius: terpilih || dalamUrutan ? 7 : 5,
+        color: terpilih ? "#f59e0b" : dalamUrutan ? "#059669" : "#1d4ed8",
+        weight: terpilih || dalamUrutan ? 2.5 : 1.5,
+        fillColor: terpilih ? "#fbbf24" : dalamUrutan ? "#10b981" : "#3b82f6",
         fillOpacity: 0.9,
       });
       marker.on("click", () => {
         const st = useGis.getState();
+        // dialog "Dari Titik" terbuka: klik titik = tambah ke urutan sambungan
+        if (st.dialogs.poligonTitik) {
+          st.tambahUrutanPoligon(p.id);
+          return;
+        }
         // mode blok: klik titik = pilih/hilangkan satu titik (tanpa popup)
         if (st.tool === "select") {
           klikFiturBarusan = true;
@@ -704,7 +715,30 @@ export default function MapCanvas() {
       }
       marker.addTo(l.points);
     }
-  }, [points, selection, labelMode]);
+  }, [points, selection, labelMode, urutanPoligon, dialogPoligonTitik]);
+
+  // ---------- Pratinjau sambungan "Dari Titik" (garis putus-putus) ----------
+  const pratinjauRef = useRef<L.LayerGroup | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!pratinjauRef.current) pratinjauRef.current = L.layerGroup().addTo(map);
+    const g = pratinjauRef.current;
+    g.clearLayers();
+    if (!dialogPoligonTitik || urutanPoligon.length < 2) return;
+    // koordinat sesuai urutan (loop pencarian, aman utk 30rb+ titik)
+    const pts: [number, number][] = [];
+    for (const id of urutanPoligon) {
+      const p = points.find((x) => x.id === id);
+      if (p) pts.push([p.lat, p.lng]);
+    }
+    if (pts.length < 2) return;
+    L.polyline(pts, { color: "#059669", weight: 2.5, dashArray: "8 6", opacity: 0.95, interactive: false }).addTo(g);
+    // tertutup: segmen penutup terakhir → pertama (lebih samar)
+    if (jenisPoligonTitik === "closed" && pts.length >= 3) {
+      L.polyline([pts[pts.length - 1], pts[0]], { color: "#059669", weight: 2, dashArray: "2 7", opacity: 0.55, interactive: false }).addTo(g);
+    }
+  }, [urutanPoligon, dialogPoligonTitik, jenisPoligonTitik, points]);
 
   // ---------- Render poligon & garis ----------
   useEffect(() => {

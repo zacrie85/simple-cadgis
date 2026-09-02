@@ -39,6 +39,7 @@ export interface DialogState {
   simpan: boolean;
   muat: boolean;
   bersih: boolean;
+  poligonTitik: boolean;
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -59,6 +60,11 @@ interface GisStore {
   contours: ContourLayer[];
   layers: GisLayer[];
   selection: string[];
+  /** Urutan titik (id) untuk membuat poligon/garis "Dari Titik" —
+   *  urutan array = urutan sambungan. Sifatnya sementara (tidak ikut proyek/sesi). */
+  urutanPoligon: string[];
+  /** Jenis hasil "Dari Titik": tertutup (poligon) / terbuka (garis). */
+  jenisPoligonTitik: "closed" | "open";
   tableShapeFilter: string | null;
   editBentukId: string | null; // bentuk yang langsung diedit saat alat edit-bentuk aktif
   dialogs: DialogState;
@@ -118,6 +124,13 @@ interface GisStore {
   setSelection: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
+  /** Tambah titik ke urutan poligon "Dari Titik" (abaikan bila bukan titik / sudah ada). */
+  tambahUrutanPoligon: (id: string) => void;
+  hapusUrutanPoligon: (id: string) => void;
+  /** Geser posisi titik dalam urutan: arah -1 = naik satu, 1 = turun satu. */
+  geserUrutanPoligon: (id: string, arah: -1 | 1) => void;
+  kosongkanUrutanPoligon: () => void;
+  setJenisPoligonTitik: (j: "closed" | "open") => void;
   setEditBentukId: (id: string | null) => void;
   deleteSelected: () => { titik: number; bentuk: number };
 
@@ -140,6 +153,7 @@ const DIALOG_AWAL: DialogState = {
   simpan: false,
   muat: false,
   bersih: false,
+  poligonTitik: false,
   point: null,
   text: null,
   shapeInfo: null,
@@ -160,6 +174,8 @@ export const useGis = create<GisStore>((set, get) => ({
   contours: [],
   layers: [],
   selection: [],
+  urutanPoligon: [],
+  jenisPoligonTitik: "closed",
   tableShapeFilter: null,
   editBentukId: null,
   dialogs: { ...DIALOG_AWAL },
@@ -446,6 +462,25 @@ export const useGis = create<GisStore>((set, get) => ({
         : [...st.selection, id],
     })),
   clearSelection: () => set({ selection: [] }),
+  tambahUrutanPoligon: (id) =>
+    set((st) => {
+      if (!st.points.some((p) => p.id === id)) return st; // bukan titik
+      if (st.urutanPoligon.includes(id)) return st; // sudah ada
+      return { urutanPoligon: [...st.urutanPoligon, id] };
+    }),
+  hapusUrutanPoligon: (id) =>
+    set((st) => ({ urutanPoligon: st.urutanPoligon.filter((x) => x !== id) })),
+  geserUrutanPoligon: (id, arah) =>
+    set((st) => {
+      const i = st.urutanPoligon.indexOf(id);
+      const j = i + arah;
+      if (i < 0 || j < 0 || j >= st.urutanPoligon.length) return st;
+      const urutan = [...st.urutanPoligon];
+      [urutan[i], urutan[j]] = [urutan[j], urutan[i]];
+      return { urutanPoligon: urutan };
+    }),
+  kosongkanUrutanPoligon: () => set({ urutanPoligon: [] }),
+  setJenisPoligonTitik: (j) => set({ jenisPoligonTitik: j }),
   setEditBentukId: (id) => set({ editBentukId: id }),
 
   deleteSelected: () => {

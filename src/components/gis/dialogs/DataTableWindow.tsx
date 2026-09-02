@@ -6,7 +6,7 @@ import { FloatingWindow } from "../Chips";
 import { titikDalamPoligon, fmtLuas, panjangGaris } from "@/lib/gis/geo";
 import type { TableRow } from "@/lib/gis/types";
 import { toast } from "sonner";
-import { Search, Pencil, Trash2, Crosshair, X, Columns3, ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { Search, Pencil, Trash2, Crosshair, X, Columns3, ChevronLeft, ChevronRight, Check, Waypoints } from "lucide-react";
 
 /** Tabel atribut mengambang seperti ArcGIS: lihat, cari, pilih, edit, hapus data.
  *  Semua kolom atribut hasil impor (Excel/KML, 70-100+ kolom) tampil penuh,
@@ -17,6 +17,7 @@ export default function DataTableWindow() {
   const points = useGis((s) => s.points);
   const shapes = useGis((s) => s.shapes);
   const selection = useGis((s) => s.selection);
+  const urutanPoligon = useGis((s) => s.urutanPoligon);
   const tableFilter = useGis((s) => s.tableShapeFilter);
   const setTableFilter = useGis((s) => s.setTableFilter);
 
@@ -183,6 +184,16 @@ export default function DataTableWindow() {
           Kolom ({kolomAttr.length}/{semuaKolom.length})
         </button>
         <div className="flex gap-1 ml-auto">
+          {urutanPoligon.length > 0 && (
+            <button
+              onClick={() => useGis.getState().setDialog("poligonTitik", true)}
+              title="Buka dialog Poligon/Garis dari Titik — susun urutan lalu buat poligon/garis"
+              className="rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-emerald-700 flex items-center gap-1.5"
+            >
+              <Waypoints className="h-3.5 w-3.5" />
+              Poligon: {urutanPoligon.length} titik terurut
+            </button>
+          )}
           <button
             onClick={() => useGis.getState().setSelection(rows.map((r) => r.id))}
             className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs hover:bg-slate-200"
@@ -284,8 +295,9 @@ export default function DataTableWindow() {
             )}
             {barisHalaman.map((r) => {
               const terpilih = selection.includes(r.id);
+              const dalamUrutan = r.type === "point" && urutanPoligon.includes(r.id);
               return (
-                <tr key={r.id} className={`group border-b last:border-0 ${terpilih ? "bg-blue-50/60" : "hover:bg-slate-50"}`}>
+                <tr key={r.id} className={`group border-b last:border-0 ${dalamUrutan ? "bg-emerald-50/70" : terpilih ? "bg-blue-50/60" : "hover:bg-slate-50"}`}>
                   <td className={`${kelasTempel(terpilih)} px-2 py-1.5 left-0`}>
                     <input
                       type="checkbox"
@@ -340,6 +352,24 @@ export default function DataTableWindow() {
                       >
                         <Crosshair className="h-3.5 w-3.5" />
                       </button>
+                      {r.type === "point" && (
+                        <button
+                          onClick={() =>
+                            dalamUrutan
+                              ? useGis.getState().hapusUrutanPoligon(r.id)
+                              : useGis.getState().tambahUrutanPoligon(r.id)
+                          }
+                          title={dalamUrutan ? "Keluarkan dari urutan poligon Dari Titik" : "Tambahkan ke urutan poligon Dari Titik (urutan klik = urutan sambungan)"}
+                          aria-label={dalamUrutan ? `Keluarkan ${r.title} dari urutan poligon` : `Tambahkan ${r.title} ke urutan poligon`}
+                          className={`h-6 w-6 rounded-md flex items-center justify-center ${
+                            dalamUrutan
+                              ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                              : "hover:bg-emerald-50 text-slate-400 hover:text-emerald-600"
+                          }`}
+                        >
+                          <Waypoints className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           if (r.type === "point") useGis.getState().deletePoint(r.id);
