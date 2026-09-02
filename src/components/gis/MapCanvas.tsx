@@ -8,7 +8,17 @@ import { warnaElevasi } from "@/lib/gis/contours";
 import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
 import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
 
-const RENDER_CAP = 20000; // batas titik dirender (data lengkap tetap di memori/tabel)
+const RENDER_CAP = 20000; // batas keras titik dirender (data lengkap tetap di memori/tabel)
+
+/** Gaya visual titik sesuai status pilihan/urutan (dipakai efek bangun & pembaruan inkremental). */
+function gayaTitik(sel: boolean, urut: boolean) {
+  return {
+    color: sel ? "#f59e0b" : urut ? "#059669" : "#1d4ed8",
+    weight: sel || urut ? 2.5 : 1.5,
+    fillColor: sel ? "#fbbf24" : urut ? "#10b981" : "#3b82f6",
+    fillOpacity: 0.9,
+  };
+}
 
 // Penanda sementara: true bila fitur baru saja diklik pada mode blok
 // (mencegah klik kosong pada peta menghapus seleksi yang baru dibuat)
@@ -135,6 +145,15 @@ export default function MapCanvas() {
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<LayerMap | null>(null);
 
+  // Renderer kanvas BERSAMA — dipakai ulang antar bangun ulang. Dulu tiap rebuild membuat
+  // L.canvas() baru yang elemen <canvas>-nya menumpuk di DOM (makin banyak canvas = geser makin berat).
+  const rendererTitikRef = useRef<L.Canvas | null>(null);
+  const rendererKonturRef = useRef<L.Canvas | null>(null);
+  // Referensi marker titik (id → marker) + gaya terakhirnya → pembaruan gaya INKREMENTAL
+  // tanpa membangun ulang puluhan ribu marker setiap seleksi/urutan berubah.
+  const markerTitikRef = useRef<Map<string, L.CircleMarker>>(new Map());
+  const gayaTitikRef = useRef<Map<string, { sel: boolean; urut: boolean }>>(new Map());
+
   const points = useGis((s) => s.points);
   const shapes = useGis((s) => s.shapes);
   const labels = useGis((s) => s.labels);
@@ -153,6 +172,7 @@ export default function MapCanvas() {
   const flyTarget = useGis((s) => s.flyTarget);
   const fitNonce = useGis((s) => s.fitNonce);
   const view = useGis((s) => s.view);
+  const perf = useGis((s) => s.perf);
 
   // ---------- Inisialisasi peta ----------
   useEffect(() => {
@@ -214,6 +234,15 @@ export default function MapCanvas() {
     };
     window.addEventListener("geokita-zoom", onZoom);
 
+    // menu Optimasi → bersihkan cache tile peta (lepaskan tile di luar layar dari memori)
+    const onBersihkanCache = () => {
+      map.closePopup();
+      map.eachLayer((ly) => {
+        if (ly instanceof L.TileLayer) (ly as unknown as { pruneTiles?: () => void }).pruneTiles?.();
+      });
+    };
+    window.addEventListener("geokita-bersihkan-cache", onBersihkanCache);
+
     // ekspos untuk pengujian otomatis (tidak berpengaruh ke UI)
     (window as unknown as { __geoMap?: L.Map }).__geoMap = map;
 
@@ -227,9 +256,14 @@ export default function MapCanvas() {
       map.off("moveend zoomend", kirimView);
       window.removeEventListener("geokita-fit-bounds", onFitBounds);
       window.removeEventListener("geokita-zoom", onZoom);
+      window.removeEventListener("geokita-bersihkan-cache", onBersihkanCache);
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      rendererTitikRef.current = null;
+      rendererKonturRef.current = null;
+      markerTitikRef.current.clear();
+      gayaTitikRef.current.clear();
     };
   }, []);
 
@@ -253,6 +287,19 @@ export default function MapCanvas() {
     if (!el) return;
     el.style.cursor = tool || dialogPoligonTitik ? "crosshair" : "";
   }, [tool, dialogPoligonTitik]);
+
+  // ---------- Preferensi performa: animasi peta ----------
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.options.zoomAnimation = perf.animasi;
+    map.options.fadeAnimation = perf.animasi;
+    map.options.markerZoomAnimation = perf.animasi;
+    map.options.inertia = perf.animasi;
+    map.eachLayer((ly) => {
+      if (ly instanceof L.TileLayer) L.Util.setOptions(ly, { updateWhenZooming: perf.animasi });
+    });
+  }, [perf.animasi]);
 
   // ---------- Alat blok seleksi & zoom kotak (drag persegi) ----------
   useEffect(() => {
@@ -660,27 +707,36 @@ export default function MapCanvas() {
     };
   }, [tool]);
 
-  // ---------- Render titik ----------
+  // ---------- Render titik (bangun ulang HANYA saat data/mode label/batas render berubah) ----------
   useEffect(() => {
     const l = layerRef.current;
     if (!l) return;
     l.points.clearLayers();
-    const renderer = L.canvas({ padding: 0.3 });
-    // titik dalam urutan poligon "Dari Titik" ditandai hijau
-    const urutanSet = new Set(urutanPoligon);
-    const cap = Math.min(points.length, RENDER_CAP);
+
+    const mm = markerTitikRef.current;
+    const gm = gayaTitikRef.current;
+    mm.clear();
+    gm.clear();
+
+    const renderer = (rendererTitikRef.current ??= L.canvas({ padding: 0.3 }));
+
+    // snapshot gaya SAAT pembuatan; perubahan seleksi/urutan berikutnya
+    // ditangani efek inkremental di bawah (tanpa bangun ulang)
+    const st = useGis.getState();
+    const selSet = new Set(st.selection);
+    const urutSet = new Set(st.urutanPoligon);
+
+    const cap = Math.min(points.length, RENDER_CAP, perf.batasRender);
+    let labelDipakai = 0;
     for (let i = 0; i < cap; i++) {
       const p = points[i];
       if (!p.visible) continue; // disembunyikan per fitur / per layer
-      const terpilih = selection.includes(p.id);
-      const dalamUrutan = urutanSet.has(p.id);
+      const terpilih = selSet.has(p.id);
+      const dalamUrutan = urutSet.has(p.id);
       const marker = L.circleMarker([p.lat, p.lng], {
         renderer,
         radius: terpilih || dalamUrutan ? 7 : 5,
-        color: terpilih ? "#f59e0b" : dalamUrutan ? "#059669" : "#1d4ed8",
-        weight: terpilih || dalamUrutan ? 2.5 : 1.5,
-        fillColor: terpilih ? "#fbbf24" : dalamUrutan ? "#10b981" : "#3b82f6",
-        fillOpacity: 0.9,
+        ...gayaTitik(terpilih, dalamUrutan),
       });
       marker.on("click", () => {
         const st = useGis.getState();
@@ -705,17 +761,40 @@ export default function MapCanvas() {
           : labelMode === "terpilih"
             ? !!p.labelTampil && !!p.title
             : false;
-      if (labelNyala) {
+      // batas label: ribuan tooltip permanen (DOM) membuat geser & zoom berat
+      if (labelNyala && labelDipakai < perf.batasLabel) {
         marker.bindTooltip(p.title, {
           permanent: true,
           direction: "right",
           offset: [9, 0],
           className: "geokita-name-label",
         });
+        labelDipakai++;
       }
       marker.addTo(l.points);
+      mm.set(p.id, marker);
+      gm.set(p.id, { sel: terpilih, urut: dalamUrutan });
     }
-  }, [points, selection, labelMode, urutanPoligon, dialogPoligonTitik]);
+  }, [points, labelMode, perf.batasRender, perf.batasLabel]);
+
+  // ---------- Pembaruan gaya titik INKREMENTAL (seleksi & urutan "Dari Titik") ----------
+  // Dulu: efek bangun-ulang penuh (±20 ribu marker) berjalan SETIAP kali seleksi atau urutan
+  // berubah — inilah jeda yang terasa saat memilih titik satu per satu di dialog.
+  useEffect(() => {
+    const mm = markerTitikRef.current;
+    if (mm.size === 0) return;
+    const selSet = new Set(selection);
+    const urutSet = new Set(urutanPoligon);
+    mm.forEach((marker, id) => {
+      const terpilih = selSet.has(id);
+      const dalamUrutan = urutSet.has(id);
+      const lama = gayaTitikRef.current.get(id);
+      if (lama && lama.sel === terpilih && lama.urut === dalamUrutan) return;
+      marker.setStyle(gayaTitik(terpilih, dalamUrutan));
+      marker.setRadius(terpilih || dalamUrutan ? 7 : 5);
+      gayaTitikRef.current.set(id, { sel: terpilih, urut: dalamUrutan });
+    });
+  }, [selection, urutanPoligon]);
 
   // ---------- Pratinjau sambungan "Dari Titik" (garis putus-putus) ----------
   const pratinjauRef = useRef<L.LayerGroup | null>(null);
@@ -745,9 +824,10 @@ export default function MapCanvas() {
     const l = layerRef.current;
     if (!l) return;
     l.shapes.clearLayers();
+    const selSet = new Set(selection);
     for (const sh of shapes) {
       if (!sh.visible) continue;
-      const terpilih = selection.includes(sh.id);
+      const terpilih = selSet.has(sh.id);
       const latlngs = sh.vertices.map((v) => [v.lat, v.lng] as [number, number]);
       if (sh.kind === "closed" && latlngs.length >= 3) {
         const poly = L.polygon(latlngs, {
@@ -847,8 +927,8 @@ export default function MapCanvas() {
     const l = layerRef.current;
     if (!l) return;
     l.contours.clearLayers();
-    // renderer canvas: ratusan garis × ribuan verteks tetap enteng (bukan SVG/DOM)
-    const renderer = L.canvas({ padding: 0.3 });
+    // renderer canvas BERSAMA (dipakai ulang — dulu kanvas baru tiap rebuild menumpuk di DOM)
+    const renderer = (rendererKonturRef.current ??= L.canvas({ padding: 0.3 }));
     let eMin = Infinity;
     let eMax = -Infinity;
     let totalPath = 0;

@@ -224,11 +224,24 @@ export function BersihkanDialog() {
 
 // ================= Sesi otomatis & pulihkan =================
 
-/** Pasang autosave: setiap perubahan data disimpan ke localStorage (debounce 1,5 detik). */
+/** Pasang autosave: HANYA perubahan DATA yang disimpan ke localStorage (debounce 1,5 detik).
+ *  Dulu: semua perubahan store — termasuk posisi peta yang berubah di setiap selesai geser/zoom —
+ *  memicu JSON.stringify seluruh proyek; pada 30rb+ titik ini membekukan UI berulang kali. */
 export function useSesiOtomatis() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const lepas = useGis.subscribe(() => {
+    const lepas = useGis.subscribe((st, prev) => {
+      // tampilan/seleksi/dialog/alat/urutan poligon tidak perlu autosave —
+      // bandingkan referensi array/objek data saja (murah, tanpa stringify)
+      if (
+        st.points === prev.points &&
+        st.shapes === prev.shapes &&
+        st.labels === prev.labels &&
+        st.contours === prev.contours &&
+        st.layers === prev.layers
+      ) {
+        return;
+      }
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => simpanSesiOtomatis(), 1500);
     });

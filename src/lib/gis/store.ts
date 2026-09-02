@@ -17,6 +17,22 @@ import { uid } from "./geo";
 export type ViewMode = "map" | "layout";
 export type Basemap = "osm" | "sat";
 
+/** Preferensi performa peta (bukan bagian proyek — disimpan terpisah di localStorage). */
+export interface PerfState {
+  /** Batas jumlah titik yang dirender ke peta. 999999 = semua (maks hard 20000 di MapCanvas). */
+  batasRender: number;
+  /** Batas tooltip label permanen di peta — ribuan tooltip DOM = geser/zoom berat. */
+  batasLabel: number;
+  /** Animasi zoom/fade peta — dimatikan membuat PC lama terasa cepat. */
+  animasi: boolean;
+}
+
+export const PERF_DEFAULT: PerfState = {
+  batasRender: 20000,
+  batasLabel: 1000,
+  animasi: true,
+};
+
 /** Nama layer bawaan untuk hasil gambar manual (titik/teks/bentuk di peta). */
 export const NAMA_LAYER_MANUAL = "Gambar Manual";
 
@@ -40,6 +56,7 @@ export interface DialogState {
   muat: boolean;
   bersih: boolean;
   poligonTitik: boolean;
+  optimasi: boolean;
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -72,6 +89,8 @@ interface GisStore {
   flyTarget: LatLng & { zoom?: number };
   fitNonce: number;
   mapView: { lat: number; lng: number; zoom: number }; // posisi peta terkini (diperbarui MapCanvas)
+  /** Preferensi performa (mode ringan, batas render/label, animasi) — lihat menu Optimasi. */
+  perf: PerfState;
 
   setView: (v: ViewMode) => void;
   setBasemap: (b: Basemap) => void;
@@ -120,12 +139,15 @@ interface GisStore {
   kosongkanSemua: () => { titik: number; bentuk: number; label: number; kontur: number; layer: number };
 
   setMapView: (v: { lat: number; lng: number; zoom: number }) => void;
+  setPerf: (patch: Partial<PerfState>) => void;
 
   setSelection: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
   /** Tambah titik ke urutan poligon "Dari Titik" (abaikan bila bukan titik / sudah ada). */
   tambahUrutanPoligon: (id: string) => void;
+  /** Ganti seluruh urutan poligon sekaligus (batch — hindari puluhan update beruntun). */
+  setUrutanPoligon: (ids: string[]) => void;
   hapusUrutanPoligon: (id: string) => void;
   /** Geser posisi titik dalam urutan: arah -1 = naik satu, 1 = turun satu. */
   geserUrutanPoligon: (id: string, arah: -1 | 1) => void;
@@ -154,6 +176,7 @@ const DIALOG_AWAL: DialogState = {
   muat: false,
   bersih: false,
   poligonTitik: false,
+  optimasi: false,
   point: null,
   text: null,
   shapeInfo: null,
@@ -183,6 +206,7 @@ export const useGis = create<GisStore>((set, get) => ({
   flyTarget: { lat: -6.994292, lng: 110.4294, zoom: 13 },
   fitNonce: 0,
   mapView: { lat: -6.994292, lng: 110.4294, zoom: 15 },
+  perf: { ...PERF_DEFAULT },
 
   setView: (v) => set({ view: v }),
   setBasemap: (b) => set({ basemap: b }),
@@ -426,6 +450,7 @@ export const useGis = create<GisStore>((set, get) => ({
   },
 
   setMapView: (v) => set({ mapView: v }),
+  setPerf: (patch) => set((st) => ({ perf: { ...st.perf, ...patch } })),
 
   kosongkanSemua: () => {
     const st = get();
@@ -468,6 +493,7 @@ export const useGis = create<GisStore>((set, get) => ({
       if (st.urutanPoligon.includes(id)) return st; // sudah ada
       return { urutanPoligon: [...st.urutanPoligon, id] };
     }),
+  setUrutanPoligon: (ids) => set({ urutanPoligon: ids }),
   hapusUrutanPoligon: (id) =>
     set((st) => ({ urutanPoligon: st.urutanPoligon.filter((x) => x !== id) })),
   geserUrutanPoligon: (id, arah) =>

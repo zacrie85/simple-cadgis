@@ -6,12 +6,17 @@
  * - Sesi otomatis (localStorage): cadangan pekerjaan agar tidak hilang saat halaman ditutup
  */
 
-import { useGis } from "./store";
+import { useGis, PERF_DEFAULT } from "./store";
 import { unduhTeks, stempelWaktu } from "./download";
 import type { GisPoint, ProyekData } from "./types";
+import type { PerfState } from "./store";
 
 const VERSI_PROYEK = 1;
 const KUNCI_SESI = "cadgis-sesi-v1";
+const KUNCI_PERF = "cadgis-perf-v1";
+/** Kuota localStorage ±5 MB per origin — payload di atas ambang ini nyaris pasti gagal,
+ *  dan mencoba = stringify ganda (penuh + tanpa foto) yang membekukan UI di data besar. */
+const AMBANG_SESI_BYTES = 4_500_000;
 
 /** Susun data proyek dari store saat ini. */
 export function bangunProyek(nama?: string): ProyekData {
@@ -92,6 +97,11 @@ export function simpanSesiOtomatis(): void {
       return;
     }
     const muatan = JSON.stringify({ ...data, fotoLepas: false });
+    if (muatan.length > AMBANG_SESI_BYTES) {
+      // terlalu besar utk kuota localStorage — langsung lewati (file proyek tetap bisa dipakai).
+      // Dulu: mencoba setItem lalu stringify ulang tanpa foto = jeda ±detik di data 30rb+ titik.
+      return;
+    }
     try {
       localStorage.setItem(KUNCI_SESI, muatan);
     } catch {
@@ -129,5 +139,33 @@ export function hapusSesi(): void {
     localStorage.removeItem(KUNCI_SESI);
   } catch {
     // abaikan
+  }
+}
+
+// ================= Preferensi performa (menu Optimasi) =================
+
+/** Simpan preferensi performa ke localStorage. */
+export function simpanPerf(perf: PerfState): void {
+  try {
+    localStorage.setItem(KUNCI_PERF, JSON.stringify(perf));
+  } catch {
+    // abaikan — preferensi performa bersifat kenyamanan
+  }
+}
+
+/** Baca preferensi performa tersimpan (null bila belum pernah diubah). */
+export function bacaPerf(): PerfState | null {
+  try {
+    const mentah = localStorage.getItem(KUNCI_PERF);
+    if (!mentah) return null;
+    const p = JSON.parse(mentah) as Partial<PerfState>;
+    const perf: PerfState = {
+      batasRender: typeof p.batasRender === "number" && p.batasRender > 0 ? p.batasRender : PERF_DEFAULT.batasRender,
+      batasLabel: typeof p.batasLabel === "number" && p.batasLabel > 0 ? p.batasLabel : PERF_DEFAULT.batasLabel,
+      animasi: typeof p.animasi === "boolean" ? p.animasi : PERF_DEFAULT.animasi,
+    };
+    return perf;
+  } catch {
+    return null;
   }
 }

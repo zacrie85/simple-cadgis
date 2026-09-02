@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import Toolbar from "./Toolbar";
 import { DrawChip, MeasureChip } from "./Chips";
@@ -10,6 +11,7 @@ import { PointDialog, TextDialog, ShapeInfoDialog } from "./dialogs/FeatureDialo
 import { ContourDialog, VolumeDialog } from "./dialogs/AnalysisDialogs";
 import ElevasiDialog from "./dialogs/ElevasiDialog";
 import PoligonTitikDialog from "./dialogs/PoligonTitikDialog";
+import OptimasiDialog from "./dialogs/OptimasiDialog";
 import View3D from "./dialogs/View3D";
 import LayerPanel from "./dialogs/LayerPanel";
 import {
@@ -19,6 +21,8 @@ import {
   BersihkanDialog,
   useSesiOtomatis,
 } from "./dialogs/ProyekDialogs";
+import { useGis } from "@/lib/gis/store";
+import { bacaPerf } from "@/lib/gis/proyek";
 
 // Leaflet & three.js hanya jalan di browser — matikan SSR untuk kedua tampilan ini
 const MapCanvas = dynamic(() => import("./MapCanvas"), { ssr: false });
@@ -30,6 +34,12 @@ const LayoutView = dynamic(() => import("./LayoutView"), { ssr: false });
  */
 export default function GisApp() {
   useSesiOtomatis(); // autosave pekerjaan ke localStorage
+
+  // preferensi performa (menu Optimasi) tersimpan di browser — muat sekali saat mulai
+  useEffect(() => {
+    const perf = bacaPerf();
+    if (perf) useGis.getState().setPerf(perf);
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
@@ -49,6 +59,7 @@ export default function GisApp() {
         <VolumeDialog />
         <ElevasiDialog />
         <PoligonTitikDialog />
+        <OptimasiDialog />
         <View3D />
         <LayerPanel />
         <SimpanProyekDialog />

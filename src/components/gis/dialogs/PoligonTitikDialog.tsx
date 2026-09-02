@@ -80,7 +80,8 @@ export default function PoligonTitikDialog() {
     setDialog("poligonTitik", false);
   };
 
-  /** Tambah dari input cepat: "3, 7, 49" (nomor baris) atau nama titik. */
+  /** Tambah dari input cepat: "3, 7, 49" (nomor baris) atau nama titik.
+   *  Batch SATU update store (dulu: satu update per token → puluhan render beruntun). */
   const tambahCepat = () => {
     const token = inputCepat
       .split(/[,;\s]+/)
@@ -88,6 +89,9 @@ export default function PoligonTitikDialog() {
       .filter(Boolean);
     if (token.length === 0) return;
     const st = useGis.getState();
+    const dasar = st.urutanPoligon;
+    const dipakai = new Set(dasar);
+    const baru = [...dasar];
     let ditambah = 0;
     const sudahAda: string[] = [];
     const takKetemu: string[] = [];
@@ -108,13 +112,15 @@ export default function PoligonTitikDialog() {
         takKetemu.push(t);
         continue;
       }
-      if (st.urutanPoligon.includes(target.id)) {
+      if (dipakai.has(target.id)) {
         sudahAda.push(target.title || `#${target.id}`);
         continue;
       }
-      st.tambahUrutanPoligon(target.id);
+      dipakai.add(target.id);
+      baru.push(target.id);
       ditambah++;
     }
+    if (ditambah > 0) st.setUrutanPoligon(baru);
     let ket = `${ditambah} titik ditambahkan ke urutan`;
     if (sudahAda.length) ket += ` • ${sudahAda.length} sudah ada`;
     if (takKetemu.length) ket += ` • tak ditemukan: ${takKetemu.slice(0, 5).join(", ")}${takKetemu.length > 5 ? "…" : ""}`;

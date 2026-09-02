@@ -37,6 +37,7 @@ import {
   Tag,
   EyeOff,
   Waypoints,
+  Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -221,6 +222,18 @@ export default function Toolbar() {
         { label: "Perbesar", icon: ZoomIn, title: "Perbesar", onClick: () => window.dispatchEvent(new CustomEvent("geokita-zoom", { detail: 1 })) },
         { label: "Perkecil", icon: ZoomOut, title: "Perkecil", onClick: () => window.dispatchEvent(new CustomEvent("geokita-zoom", { detail: -1 })) },
         { label: "Fit Data", icon: Maximize2, title: "Tampilkan semua data", onClick: () => s.fitData() },
+      ],
+    },
+    {
+      nama: "Performa",
+      items: [
+        {
+          label: "Optimasi",
+          icon: Gauge,
+          title: "Optimasi performa — mode ringan sekali klik, batas titik/label, matikan animasi, bersihkan cache (buat aplikasi makin lancar & ringan)",
+          onClick: () => s.setDialog("optimasi", true),
+          active: s.dialogs.optimasi,
+        },
       ],
     },
     {
