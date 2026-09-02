@@ -9,6 +9,26 @@ function escXml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Amankan isi CDATA: urutan "]]>" di tengah teks akan memutus blok CDATA. */
+function cdataAman(s: string): string {
+  return s.replace(/\]\]>/g, "]]]]><![CDATA[>");
+}
+
+/**
+ * Tabel HTML semua atribut untuk balloon Google Earth.
+ * GE tidak merender <ExtendedData> di balloon secara otomatis, jadi data tabel
+ * ditulis juga sebagai tabel di <description> (ExtendedData tetap ditulis untuk
+ * software GIS seperti QGIS).
+ */
+function tabelBalloon(attrs: Record<string, string> | undefined): string {
+  const entri = Object.entries(attrs || {}).filter(([, v]) => v !== undefined && v !== "");
+  if (entri.length === 0) return "";
+  const baris = entri
+    .map(([k, v]) => `<tr><td><b>${escXml(k)}</b></td><td>${escXml(String(v))}</td></tr>`)
+    .join("");
+  return `<table border="1" cellpadding="4" cellspacing="0">${baris}</table>`;
+}
+
 function extendedData(attrs: Record<string, string>, extra: Record<string, string> = {}): string {
   const all = { ...attrs, ...extra };
   const entries = Object.entries(all).filter(([, v]) => v !== undefined && v !== "");
@@ -32,7 +52,8 @@ function styleLabel(mode: LabelMode, tanda?: boolean): string {
 
 function pointPlacemark(p: GisPoint, labelMode: LabelMode): string {
   const desc = [
-    p.description,
+    p.description ? escXml(p.description).replace(/\n/g, "<br/>") : "",
+    tabelBalloon(p.attrs),
     p.elevation != null ? `Ketinggian: ${p.elevation} m` : "",
     p.photo ? `<img src="${p.photo}" alt="foto" style="max-width:300px"/>` : "",
   ]
@@ -40,7 +61,7 @@ function pointPlacemark(p: GisPoint, labelMode: LabelMode): string {
     .join("<br/>");
   return `  <Placemark>
     <name>${escXml(p.title || "Titik")}</name>
-${styleLabel(labelMode, p.labelTampil)}    <description><![CDATA[${desc}]]></description>
+${styleLabel(labelMode, p.labelTampil)}    <description><![CDATA[${cdataAman(desc)}]]></description>
 ${extendedData(p.attrs, {
   Keterangan: p.description,
   Ketinggian: p.elevation != null ? String(p.elevation) : "",
@@ -56,9 +77,15 @@ function shapePlacemark(s: GisShape, labelMode: LabelMode): string {
     s.kind === "open"
       ? `    <LineString><tessellate>1</tessellate><coordinates>${coordStr}</coordinates></LineString>\n`
       : `    <Polygon><outerBoundaryIs><LinearRing><coordinates>${coordStr} ${s.vertices[0].lng},${s.vertices[0].lat},0</coordinates></LinearRing></outerBoundaryIs></Polygon>\n`;
+  const desc = [
+    s.description ? escXml(s.description).replace(/\n/g, "<br/>") : "",
+    tabelBalloon(s.attrs),
+  ]
+    .filter(Boolean)
+    .join("<br/>");
   return `  <Placemark>
     <name>${escXml(s.title)}</name>
-${styleLabel(labelMode, s.labelTampil)}    <description><![CDATA[${s.description ?? ""}]]></description>
+${styleLabel(labelMode, s.labelTampil)}    <description><![CDATA[${cdataAman(desc)}]]></description>
 ${extendedData(s.attrs, { Keterangan: s.description ?? "", Jenis: s.kind === "closed" ? "Poligon" : "Garis" })}${geom}  </Placemark>\n`;
 }
 
