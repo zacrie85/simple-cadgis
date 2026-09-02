@@ -656,3 +656,18 @@ Work Log:
 
 Stage Summary:
 - FITUR RASTER LIVE: Berkas → Raster mengimpor GeoTIFF orthophoto (overlay presisi di peta) & DEM 1 band (elevasi lokal tanpa internet, akurat sesuai resolusi file, bilinear). ECW diberi panduan konversi. Anti-hang via worker + blok bertahap + batal. Commit b209e0f pushed; Pages success.
+
+---
+Task ID: 29-bridge
+Agent: Super Z (main agent)
+Task: User minta "plugin ECW" seperti ECW-Plugin-for-AutoCAD agar file .ecw langsung terbaca saat impor.
+
+Work Log:
+- Analisis kejujuran teknis: plugin dekoder ECW di browser TIDAK MUNGKIN (SDK proprietary Hexagon/ERDAS berlisensi C++, format tertutup, lisensi melarang implementasi web). Plugin AutoCAD bisa karena jalan di desktop Windows dgn SDK resmi di-bundle. Jalan legal setara: memanfaatkan QGIS desktop (installer Windows-nya menyertakan ECW SDK lisensi desktop gratis).
+- Dibuat "ECW BRIDGE untuk SIMPLE CADGIS" (public/ecw-bridge-qgis.py): skrip Python QGIS 3.x konsol — pilih banyak file .ecw/.jp2 sekaligus (batch), konversi ke GeoTIFF TILED+DEFLATE (lossless)+BIGTIFF=IF_SAFER+piramida overview AVERAGE 2-32, CRS/georef ikut utuh, ringkasan berhasil/gagal via QMessageBox + log konsol, instruksi pakai 6 langkah di header skrip.
+- RasterDialog.tsx: kotak peringatan ECW dirombak jadi panel "jembatan konversi" — teks jalan resmi & legal + tombol unduh "Skrip ECW Bridge (.py)" (href relatif ecw-bridge-qgis.py, atribut download=ECW-Bridge-SIMPLE-CADGIS.py — cocok utk Pages /simple-cadgis/ & localhost) + langkah 1-4 pemakaian; toast ECW diarahkan ke tombol ini.
+- public/sw.js: CACHE v3 → v4 (paksa refresh).
+- Uji: py_compile lulus; tsc --noEmit + eslint + build produksi bersih; browser: dialog tampil, link 200 application/octet-stream, out/ecw-bridge-qgis.py ikut static export, 0 error console (hanya warning a11y Radix lama). Screenshot: download/verifikasi-ecw-bridge.png.
+
+Stage Summary:
+- "ECW Bridge" jadi: bukan dekoder (mustahil secara legal/teknis di web), tapi jembatan konversi otomatis satu-klik via QGIS — batch, lossless, georef utuh, langsung terbaca menu Raster. Menunggu konfirmasi user utk rilis v1.3.4.
