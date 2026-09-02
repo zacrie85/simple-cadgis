@@ -537,3 +537,21 @@ Work Log:
 
 Stage Summary:
 - GitHub Pages kini BENAR-BENAR berfungsi (perbaikan hotfix langsung ke main, tanpa tag baru — installer desktop tidak berubah; v1.3.2 opsional bila user ingin penanda versi). Token ghp_* user dipakai lagi utk push; tetap disarankan dicabut setelah sesi.
+
+---
+Task ID: 26
+Agent: Super Z (main agent)
+Task: Fitur baru — buat poligon/garis otomatis dari titik-titik terpilih sesuai urutan pilihan (permintaan user; contoh: pilih titik 3 → 7 → 49 → jadi poligon tertutup/terbuka).
+
+Work Log:
+- PEMULIHAN REPO (pra-kerja): sandbox mereset main lokal ke "Initial commit" + 12 commit auto berpesan UUID; store.ts dll kembali versi lama (elevasi/kosongkanSemua hilang), ElevasiDialog.tsx & elevasi.ts hilang dari disk, node_modules tidak lengkap. Remote AMAN (main=c3ad765, tag v1.3.1). Solusi: git fetch + reset --hard origin/main, bun install ulang, dev server direstart. Belajarannya: selalu cek git log vs remote di awal sesi; remote = sumber kebenaran.
+- Store: urutanPoligon (array id terurut) + jenisPoligonTitik (closed/open) + aksi tambahUrutanPoligon (tolak duplikat/bukan titik), hapusUrutanPoligon, geserUrutanPoligon (naik/turun), kosongkanUrutanPoligon, setJenisPoligonTitik. Sifat sementara — tidak ikut proyek/sesi. DialogState + poligonTitik.
+- Dialog PoligonTitikDialog (baru): 3 cara pilih — input cepat "3, 7, 49" (nomor baris 1-based / nama persis / awalan), daftar cari (filter nama+nomor, render bertahap 150 utk 30rb+ titik + "tampilkan lebih banyak"), klik titik di peta. Panel Urutan Sambungan bernomor dgn naik/turun/keluarkan/kosongkan. Radio Tertutup (poligon, akhir→awal otomatis) / Terbuka (garis) + 8 warna. Buat → simpanShapeDariPending ke layer Gambar Manual → dialog penamaan (shapeInfo edit) terbuka. Info minimal 3 titik (poligon) / 2 (garis).
+- MapCanvas: klik titik saat dialog terbuka → tambahUrutanPoligon (diuraikan sebelum handler blok/popup); titik urutan dirender HIJAU (radius 7); pratinjau polyline putus-putus emerald di layer khusus (pratinjauRef, dibersihkan otomatis) + segmen penutup samar bila tertutup; kursor crosshair saat dialog terbuka.
+- PENTING (bug ditemukan saat uji): Radix Dialog modal mengunci pointer-events body → peta tak bisa diklik; klik luar juga menutup dialog & mengosongkan urutan. Solusi: Dialog modal={false} + onPointerDownOutside/onFocusOutside preventDefault → peta tetap hidup, dialog bertahan.
+- Tabel Data: tombol Waypoints per baris titik (toggle tambah/keluarkan, highlight emerald) + chip "Poligon: N titik terurut" (buka dialog).
+- Uji e2e (80 titik grid): input "3, 7, 49" → urutan benar; +P-12 via daftar; geser P-12 naik; klik titik di peta → P-04 masuk; Buat Poligon → "Batas Contoh A" 3 titik • 983,93 ha, sisi penutup terlihat di peta; Terbuka → "Jalur Ukur 1-80" 2 titik • 12,63 km diagonal; tabel toggle + chip muncul/hilang; Batal membersihkan urutan; sesi pulih (localStorage) kompatibel. Console bersih; lint + tsc + build produksi bersih. Screenshot: tool-results/poligon-0*.png.
+- Catatan: commit 38145db di atas c3ad765 (lokal == remote sebelum commit ini) — belum di-push, menunggu konfirmasi user utk rilis v1.3.2.
+
+Stage Summary:
+- Menu Gambar → "Dari Titik": poligon/garis otomatis dari titik impor/manapun, urutan pilihan = urutan sambungan, tervalidasi end-to-end. Satu commit di depan remote; rilis v1.3.2 menyusul setelah user uji.
