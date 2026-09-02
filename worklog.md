@@ -621,3 +621,17 @@ Work Log:
 
 Stage Summary:
 - Dua perbaikan ekspor tayang: (1) folder '&amp;' fix (perlu reload browser utk pengguna), (2) balloon GE kini menampilkan tabel lengkap semua kolom. SW v3 memaksa cache segar. Installer v1.3.2 masih lama — v1.3.3 menunggu konfirmasi user.
+
+---
+Task ID: 28-rilis
+Agent: Super Z (main agent)
+Task: Rilis v1.3.3 setelah user konfirmasi perbaikan ekspor berhasil.
+
+Work Log:
+- Bump package.json 1.3.2 → 1.3.3, commit 1b58d0e, tag annotated v1.3.3, push main + tag (output disaring redact).
+- CI: "Deploy ke GitHub Pages" → success; "Build Installer Desktop (Windows)" → success (±6 menit).
+- Verifikasi: Release "SIMPLE CADGIS v1.3.3" + aset SIMPLE-CADGIS-Setup-1.3.3.exe (±197 MB, HTTP 200); Pages index 200.
+
+Stage Summary:
+- RILIS v1.3.3 SELESAI (web + installer): berisi fix ekspor KML/KMZ — folder 'Poligon & Garis' ter-escape (file bisa dibuka Google Earth), balloon menampilkan seluruh data tabel, CDATA aman, cache SW v3.
+- Token ghp_* user masih dipakai push; ingatkan mencabut setelah sesi.
