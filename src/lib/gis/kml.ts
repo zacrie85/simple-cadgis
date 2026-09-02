@@ -89,7 +89,7 @@ export function bangunKML(opts: {
     body += "  </Folder>\n";
   }
   if (shapes.length) {
-    body += "  <Folder><name>Poligon & Garis</name>\n";
+    body += `  <Folder><name>${escXml("Poligon & Garis")}</name>\n`;
     body += shapes.map((sh) => shapePlacemark(sh, labelMode)).join("");
     body += "  </Folder>\n";
   }
