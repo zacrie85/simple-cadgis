@@ -1,6 +1,6 @@
 {
   "name": "simple-cadgis",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "private": true,
   "description": "SIMPLE CADGIS — aplikasi GIS web: peta, kontur, cut & fill, ekspor SHP/KMZ/Excel, layout cetak. Bisa dipasang di PC (Windows).",
   "author": "zacrie85",
