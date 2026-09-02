@@ -605,3 +605,19 @@ Work Log:
 
 Stage Summary:
 - Bug ekspor KMZ/KML poligon DIPERBAIKI dan sudah live di Pages. Uji regresi permanen di scripts/uji-kml.ts. Belum ada tag baru (opsi v1.3.3 menunggu konfirmasi user).
+
+---
+Task ID: 28-lanjutan
+Agent: Super Z (main agent)
+Task: User masih kena error yang sama (line 5 col 25) + bug baru: popup Google Earth hanya menampilkan Ketinggian, data tabel lain tidak muncul.
+
+Work Log:
+- Verifikasi live: deployment Pages terkonfirmasi dari commit 0bcae69 (berisi fix &) — error user berasal dari browser yang masih menjalankan JS lama (tab lama / cache SW v2, stale-while-revalidate). String KML berada di chunk lazy-loaded (dialog ekspor) sehingga tak terlihat di HTML awal.
+- Bug popup: impor Excel mengisi attrs (ImportDialog:264) dan ikut terekspor ke <ExtendedData>, TAPI Google Earth tidak merender ExtendedData di balloon secara otomatis — yang dirender hanya <description> (makanya hanya "Ketinggian" yang muncul).
+- Fix kml.ts: tabelBalloon() menulis SEMUA atribut sebagai tabel HTML di <description> (ter-escape, tampil di semua versi GE) untuk titik & shape; ExtendedData tetap ditulis untuk QGIS/GIS tools; cdataAman() mencegah ']]>' memutus CDATA; deskripsi escXml + \n-><br/>.
+- public/sw.js: CACHE v2 → v3 (paksa refresh precache semua pengguna).
+- Uji: 18 cek lulus (tambah 7 cek balloon: tabel, escape nilai, newline, ketinggian, ']]>' escape, keseimbangan CDATA, ExtendedData); tsc + lint + build produksi bersih.
+- Push 8bdd31c → deployment Pages success (SHA terverifikasi via API).
+
+Stage Summary:
+- Dua perbaikan ekspor tayang: (1) folder '&amp;' fix (perlu reload browser utk pengguna), (2) balloon GE kini menampilkan tabel lengkap semua kolom. SW v3 memaksa cache segar. Installer v1.3.2 masih lama — v1.3.3 menunggu konfirmasi user.
