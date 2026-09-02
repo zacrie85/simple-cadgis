@@ -635,3 +635,24 @@ Work Log:
 Stage Summary:
 - RILIS v1.3.3 SELESAI (web + installer): berisi fix ekspor KML/KMZ — folder 'Poligon & Garis' ter-escape (file bisa dibuka Google Earth), balloon menampilkan seluruh data tabel, CDATA aman, cache SW v3.
 - Token ghp_* user masih dipakai push; ingatkan mencabut setelah sesi.
+
+---
+Task ID: 29
+Agent: Super Z (main agent)
+Task: Fitur impor raster georeferensi — GeoTIFF (orthophoto/citra overlay + DEM sumber elevasi lokal) & ECW, maks 500 MB, aplikasi tidak boleh hang.
+
+Work Log:
+- Keputusan desain: ECW TIDAK mungkin didekode di browser (SDK proprietary C++, lisensi larang web) → menu menerima .ecw tapi menampilkan pesan panduan konversi via QGIS/GDAL. GeoTIFF penuh: overlay + DEM lokal.
+- Arsitektur anti-hang: src/workers/raster-worker.ts (geotiff.js v3 + proj4, pool:null → dekode dalam thread worker sendiri); baca per blok ±2 juta piksel; pratinjau maks 2048 px (overview COG dipakai bila ada); OffscreenCanvas → blob PNG(DEM)/JPEG(citra) → objectURL; AbortController untuk batal; geotiff.fromBlob = baca byte-range, file asli tak pernah dimuat utuh.
+- CRS: GeoKeys → WGS84 identitas / EPSG:3857 / seluruh zona UTM (326xx/327xx → proj4 def dinamis); CRS lain → pesan minta resave via QGIS. Sudut bbox diproyeksikan ke lat/lng.
+- raster.ts: worker SINGLETON (ref DEM bertahan untuk sampling elevasi); bukaRaster(kunci?, onProgres, sinyalBatal) + elevasiDariRaster + batalElevasiRaster.
+- Store: rasters: RasterLayer[] (in-memory, tidak ikut proyek — terlalu besar utk localStorage) + tambah/hapus/setTerlihat/setOpasitas + isiElevasiMassal (satu update utk ribuan titik) + dialog "raster".
+- MapCanvas: pane "raster-pane" zIndex 350 (di bawah titik, di atas basemap), pointer-events none; diff Map<id, L.imageOverlay> untuk toggle/opasitas.
+- RasterDialog: drop zone + input file, batas 500 MB, progress bar + batal, daftar raster (mata, opasitas, hapus, info px/CRS/resolusi/DEM). ElevasiDialog: pilihan sumber "File DEM lokal (tanpa internet)" vs "DEM Satelit (Online)" — lokal otomatis default bila ada DEM; sampling bilinear, titik di luar cakupan dilaporkan. Toolbar Berkas → "Raster"; GisApp mount.
+- BUG ditemukan saat uji: worker menyimpan ref DEM dgn id proses buka (rst-*) sementara elevasi mengirim id layer → tak ketemu. Fix: id layer dibuat di awal & dikirim sebagai "kunci" bukaRaster.
+- Uji: scripts/buat-tiff-uji.ts (generator GeoTIFF WGS84: RGB 1024×768, DEM float32 512×512 nilai sintetis, RGB besar 1024×2400 multi-blok + .ecw palsu); scripts/uji-tiff.ts (bbox/geokeys/nilai — 11 cek lulus; belajar: writer butuh GeographicTypeGeoKey diberikan, bukan GeoKeyDirectory manual); scripts/uji-utm.ts (UTM 49S Semarang = 436.975 E / 9.226.844 N + balik-balik 1e-6° — 5 cek lulus; koreksi: Semarang zona 49 bukan 48).
+- E2e browser (agent-browser): Demo → impor RGB → overlay tampil tepat di Semarang, pane 350, pointer-events none; impor DEM ("DEM 1 band"); .ecw → toast penolakan + panduan QGIS, tak masuk daftar; Elevasi DEM → radio "File DEM lokal" auto-pilih; titik dalam bbox → 19,5717 m (teoretis ±19,6 ✓), titik luar bbox → "1 di luar cakupan DEM lokal"; file besar multi-blok sukses + UI tetap 56 fps saat proses; 0 error console (hanya warning a11y Radix lama). tsc+lint+build bersih.
+- Catatan: point creation via agent-browser klik peta — Tabel Data (modal) memblokir peta; tutup dulu (Escape).
+
+Stage Summary:
+- FITUR RASTER LIVE: Berkas → Raster mengimpor GeoTIFF orthophoto (overlay presisi di peta) & DEM 1 band (elevasi lokal tanpa internet, akurat sesuai resolusi file, bilinear). ECW diberi panduan konversi. Anti-hang via worker + blok bertahap + batal. Commit b209e0f pushed; Pages success.
