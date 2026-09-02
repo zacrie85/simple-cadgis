@@ -555,3 +555,23 @@ Work Log:
 
 Stage Summary:
 - Menu Gambar → "Dari Titik": poligon/garis otomatis dari titik impor/manapun, urutan pilihan = urutan sambungan, tervalidasi end-to-end. Satu commit di depan remote; rilis v1.3.2 menyusul setelah user uji.
+
+---
+Task ID: 27
+Agent: Super Z (main agent)
+Task: Laporan user — delay buat poligon agak lama + aplikasi berat saat digeser + permintaan menu optimasi manual sekali klik (dan pertanyaan: apakah RAM besar / prosesor tinggi membuat lebih lancar).
+
+Work Log:
+- Diagnosa 3 akar masalah (data 30rb titik): (1) useSesiOtomatis berlangganan SEMUA perubahan store — termasuk setMapView yang terpicu tiap moveend/zoomend → tiap selesai geser, JSON.stringify seluruh proyek (30rb titik ±detik, berulang, termasuk stringify ganda saat kuota gagal); (2) efek render titik membangun ulang ±20 ribu circleMarker SETIAP kali seleksi/urutanPoligon/dialog berubah — buka dialog "Dari Titik", klik tiap titik, buat poligon, blok — semuanya kena; (3) label tooltip permanen tak dibatasi (mode Semua = ribuan node DOM) + L.canvas() baru tiap rebuild menumpuk elemen <canvas> di DOM.
+- store.ts: state perf {batasRender, batasLabel, animasi} + setPerf + PERF_DEFAULT; dialog baru "optimasi"; aksi setUrutanPoligon (batch) untuk input cepat multi-token (dulu 1 update per token → render beruntun).
+- MapCanvas: efek titik dipecah dua — bangun-ulang hanya pada [points, labelMode, perf.batasRender, perf.batasLabel] (snapshot seleksi/urutan via getState), dan efek INKREMENTAL [selection, urutanPoligon] yang restyle marker via Map<id, marker> (setStyle + setRadius hanya yang berubah). Renderer kanvas TUNGGAL dipakai ulang (titik & kontur, ref di-reset saat unmount). Cap label permanen default 1.000. Efek [perf.animasi]: map.options zoomAnimation/fadeAnimation/markerZoomAnimation/inertia + L.Util.setOptions tile updateWhenZooming. Event "geokita-bersihkan-cache": closePopup + pruneTiles semua TileLayer.
+- proyek.ts: simpanSesiOtomatis melewati payload > 4,5 MB tanpa stringify ganda; helper simpanPerf/bacaPerf (localStorage cadgis-perf-v1). ProyekDialogs.useSesiOtomatis hanya memicu autosave saat referensi points/shapes/labels/contours/layers berubah (gerakan peta/seleksi/dialog diabaikan).
+- PoligonTitikDialog: tambahCepat batch → setUrutanPoligon sekali.
+- Menu baru: grup PERFORMA di Toolbar (ikon Gauge) → OptimasiDialog: statistik beban (titik di peta x/y, poligon, label tampil, kontur), peringatan label >1000 + tombol perbaiki cepat, tombol MODE RINGAN (render 8.000 + label 500 + animasi mati) / kembali normal, select batas render (3rb/8rb/15rb/20rb/Semua) & label (200/500/1rb/tanpa), toggle animasi, Bersihkan Cache Tile, reset bawaan; preferensi persist & di-load GisApp saat mulai.
+- Uji e2e (30.000 titik, agent-browser): impor 9 MB OK; tambah cepat "3, 7, 49" → urutan benar; TAMBAH 1 TITIK sinkron 0,6 ms (handler) / 110 ms sampai render tuntas (dulu ±600-900 ms rebuild penuh); BUAT POLIGON 344 ms end-to-end incl. dialog penamaan (dulu ±1,2-2 s, rebuild ganda); blok 16.835 fitur → seleksi logika 10 ms; kosongkan seleksi 16.835 → restyle flush 16,5 ms; PAN 20rb titik 146 ms → MODE RINGAN 5 ms (33×); mode ringan + 500 label tetap 5,3 ms; label Semua ter-cap 500+1 bentuk sesuai batas; Bersihkan Cache toast OK; localStorage cadgis-perf-v1 tersimpan & reset bawaan bekerja; canvas overlay TETAP 1 (dulu menumpuk); 0 error console; tsc + lint + build produksi bersih. Screenshot: tool-results/optimasi-dialog.png, download/optimasi-peta-30k.png.
+- Artefak uji public/uji-30k*.xlsx dihapus sebelum commit.
+
+Stage Summary:
+- Menu PERFORMA → Optimasi aktif: satu klik "MODE RINGAN" membuat peta terasa jauh lebih enteng di PC tua; pengaturan rinci + statistik beban + pembersihan cache tersimpan otomatis.
+- Alur buat poligon ±6-8× lebih cepat (tambah titik & kosongkan seleksi ±40×), geser peta bebas jeda autosave, canvas tidak lagi menumpuk.
+- Commit 7ed2e37 — belum di-push, menyusul rilis v1.3.2 bersama Task 26 (menunggu konfirmasi user / token baru).
