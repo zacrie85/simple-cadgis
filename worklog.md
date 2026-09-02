@@ -575,3 +575,19 @@ Stage Summary:
 - Menu PERFORMA → Optimasi aktif: satu klik "MODE RINGAN" membuat peta terasa jauh lebih enteng di PC tua; pengaturan rinci + statistik beban + pembersihan cache tersimpan otomatis.
 - Alur buat poligon ±6-8× lebih cepat (tambah titik & kosongkan seleksi ±40×), geser peta bebas jeda autosave, canvas tidak lagi menumpuk.
 - Commit 7ed2e37 — belum di-push, menyusul rilis v1.3.2 bersama Task 26 (menunggu konfirmasi user / token baru).
+
+---
+Task ID: 27-rilis
+Agent: Super Z (main agent)
+Task: Rilis v1.3.2 (Task 26 poligon dari titik + Task 27 menu Optimasi) setelah konfirmasi user "berhasil".
+
+Work Log:
+- Persiapan lokal: bump package.json 1.3.1 → 1.3.2, commit d1bffe9, tag annotated v1.3.2.
+- Token baru dari user → validasi API (login zacrie85; remote main c3ad765).
+- Push main (c3ad765..d1bffe9, 5 commit: Task 26 fitur+worklog, Task 27 performa+worklog, versi) + tag v1.3.2 — output disaring sed redact.
+- CI: "Deploy ke GitHub Pages" → success; "Build Installer Desktop (Windows)" (v1.3.2) → success (±5 menit polling).
+- Verifikasi: Release "SIMPLE CADGIS v1.3.2" terpublikasi + aset SIMPLE-CADGIS-Setup-1.3.2.exe (±197 MB, HTTP 200); Pages https://zacrie85.github.io/simple-cadgis/ index 200 + chunk /simple-cadgis/_next/* 200.
+
+Stage Summary:
+- RILIS v1.3.2 SELESAI: web (Pages) & installer Windows v1.3.2 berisi poligon/garis otomatis dari titik terpilih (menu Gambar > Dari Titik, tertutup/terbuka) + menu PERFORMA > Optimasi (mode ringan sekali klik, batas render/label, bersihkan cache) + render inkremental & autosave pintar.
+- Token ghp_* user dipakai push; ingatkan user mencabut token setelah sesi.
