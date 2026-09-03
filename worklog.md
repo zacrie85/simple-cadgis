@@ -671,3 +671,21 @@ Work Log:
 
 Stage Summary:
 - "ECW Bridge" jadi: bukan dekoder (mustahil secara legal/teknis di web), tapi jembatan konversi otomatis satu-klik via QGIS — batch, lossless, georef utuh, langsung terbaca menu Raster. Menunggu konfirmasi user utk rilis v1.3.4.
+
+---
+Task ID: 30
+Agent: Super Z (main agent)
+Task: Dua upgrade dari user — (A) Layout: grid koordinat lintang/bujur DMS (interval manual, 2 mode garis, label 4 sisi, gaya referensi peta topografi); (B) Titik: 10 ikon penanda as-built jaringan fiber optik (pin warna + tiang/ODP/ODC/closure/handhole/menara), pilih per titik & otomatis massal.
+
+Work Log:
+- RILIS v1.3.4 dulu (konfirmasi user "berhasil" utk raster+ECW Bridge): bump 1.3.3→1.3.4, tag v1.3.4, push → CI Pages + Installer success, aset SIMPLE-CADGIS-Setup-1.3.4.exe HTTP 200.
+- Upgrade B: lib baru src/lib/gis/ikon-titik.ts (BEFAS leaflet — aman prerender; 10 ikon SVG inline 24×30: pin merah/biru/ungu/hijau, tiang tumpu, ODP, ODC, closure, handhole, menara + "polos") + src/lib/gis/ikon-divicon.ts (pembungkus L.divIcon, client-only). BUG: awalnya L.divIcon satu file dengan ikon-titik → leaflet terevaluasi saat prerender → "window is not defined" pada next build; dipisah 2 modul.
+- types.ts: GisPoint.ikon?: string. MapCanvas: titik berikon → L.marker divIcon (ujung pin di koordinat, iconAnchor [12,29]); polos tetap circleMarker kanvas (performa); pembaruan inkremental seleksi/urutan → setIcon versi ber-halo biru utk marker ikon; markerTitikRef di-wide-kan ke L.CircleMarker|L.Marker.
+- FeatureDialogs: PemilihIkon (grid 6 kolom, 11 pilihan) di PointDialog (buat + edit) + dialog baru IkonTitikDialog (ganti ikon MASSAL titik terpilih hasil Blok — store dialogs.ikonTitik). Toolbar grup Pilih: tombol "Ikon" (Sticker), disable bila tak ada titik terpilih. GisApp mount.
+- Upgrade A (LayoutView): state gridAktif/gridMode(garis|tick)/gridInt{d,m,s}; formatDMS (gaya referensi: 110°26'0"E, 6°59'30"S); perbaruiGrid imperatif via innerHTML (tanpa re-render React) — garis putus-putus + tick pendek 8px di dalam bingkai (layer z-460, terpotong rapi), chip label putih-berbingkai DI LUAR bingkai pada kolam margin sheet (layer z-640, gaya peta topografi persis referensi: bujur atas-bawah, lintang kiri-kanan); bingkai melebar otomatis saat grid aktif (left/right 54px, top 104, bottom 88) + refit; guard interval 0 & >60 garis per arah; binding map "move zoom viewreset resize"; ikut html2canvas (PDF/PNG). Panel Layout: seksi "Grid koordinat (DMS)" (Tampil + mode + interval D/M/S + preset 30"/1'/2'/5'/10'/30'/1°).
+- BUG hooks: useEffect grid sempat diletakkan setelah early-return view → rules-of-hooks error lint; dipindah sebelum early-return.
+- Uji e2e browser: titik berikon ODP tersimpan & tampil (markerPane svg pin oranye); edit titik → ikon tersimpan (edit dialog menunjukkan ODP terpilih) → ganti Menara → SVG fill berubah #334155; Blok 20 titik → IkonTiitikDialog "20 titik terpilih" → Terapkan Tiang → 21 ikon di peta. Grid: garis putus-putus + chip "110°26'0"E" di atas bingkai; mode tick: 6 tick + 6 label termasuk "6°59'30"S" kiri-kanan; guard 1 detik → "Grid terlalu rapat". Screenshot: download/uji-ikon-odp.png, uji-ikon-massal.png, uji-grid-bersih.png, uji-grid-tick.png. Lint+tsc+build bersih.
+- Catatan uji: agent-browser find role click kadang dilaporkan sukses tapi onClick tidak jalan pada dialog Radix — andalan: dispatch DOM .click() via eval.
+
+Stage Summary:
+- FITUR BARU LIVE DI DEV: (A) grid koordinat DMS layout cetak — interval manual derajat/menit/detik, garis putus-putus silang atau tick pendek, label 4 sisi gaya peta topografi, ikut tercetak PDF/PNG; (B) 10 ikon titik as-built FO + pin warna — pilih saat buat titik, ubah lewat Edit titik, atau ganti massal utk titik hasil Blok; ikut Simpan/Muat proyek & tersimpan di sesi. Menunggu konfirmasi user → rilis v1.4.0.

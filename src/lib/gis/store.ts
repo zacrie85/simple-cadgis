@@ -59,6 +59,7 @@ export interface DialogState {
   poligonTitik: boolean;
   optimasi: boolean;
   raster: boolean;
+  ikonTitik: boolean; // ganti ikon penanda massal utk titik terpilih (hasil Blok)
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -188,6 +189,7 @@ const DIALOG_AWAL: DialogState = {
   poligonTitik: false,
   optimasi: false,
   raster: false,
+  ikonTitik: false,
   point: null,
   text: null,
   shapeInfo: null,

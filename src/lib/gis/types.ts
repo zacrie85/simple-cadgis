@@ -47,6 +47,7 @@ export interface GisPoint {
   visible: boolean;
   labelTampil?: boolean; // tanda: label nama titik ini tampil pada mode "terpilih"
   layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
+  ikon?: string; // id ikon penanda (lihat lib/gis/ikon-titik.ts) — kosong = titik polos
 }
 
 export interface GisShape {

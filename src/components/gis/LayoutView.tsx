@@ -54,6 +54,24 @@ const tanggalKini = () => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 };
 
+/** Format koordinat derajat-menit-detik gaya peta topografi: 106°56'6"E / 6°11'42"S */
+function formatDMS(v: number, sumbu: "lat" | "lng"): string {
+  const hemi = sumbu === "lat" ? (v < 0 ? "S" : "N") : (v < 0 ? "W" : "E");
+  const a = Math.abs(v);
+  let d = Math.floor(a);
+  let m = Math.floor((a - d) * 60);
+  let s = Math.round(((a - d) * 60 - m) * 60);
+  if (s === 60) {
+    s = 0;
+    m += 1;
+  }
+  if (m === 60) {
+    m = 0;
+    d += 1;
+  }
+  return `${d}°${m}'${s}"${hemi}`;
+}
+
 /** Foto yang ditempel ke sheet layout: posisi % pusat, lebar px, rasio aspek asli. */
 type FotoLayout = { id: string; nama: string; src: string; x: number; y: number; w: number; rasio: number };
 
@@ -131,6 +149,10 @@ export default function LayoutView() {
   const [simbolKustom, setSimbolKustom] = useState<ItemLegendaKustom["simbol"]>("garis");
   const [warnaKustom, setWarnaKustom] = useState("#e11d48");
   const [ekspor, setEkspor] = useState<"pdf" | "png" | null>(null);
+  // ---------- grid koordinat (graticule) lintang & bujur DMS ----------
+  const [gridAktif, setGridAktif] = useState(false);
+  const [gridMode, setGridMode] = useState<"garis" | "tick">("garis");
+  const [gridInt, setGridInt] = useState({ d: 0, m: 1, s: 0 });
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -147,6 +169,11 @@ export default function LayoutView() {
   const fileFotoRef = useRef<HTMLInputElement | null>(null);
   const legendaBoxRef = useRef<HTMLDivElement | null>(null);
   const resizeLegendaRef = useRef<{ lebarDasar: number } | null>(null);
+  // layer DOM grid koordinat: garis/tick di dalam bingkai, label di margin sheet
+  const garisGridRef = useRef<HTMLDivElement | null>(null);
+  const labelGridRef = useRef<HTMLDivElement | null>(null);
+  const gridOptRef = useRef({ aktif: false, mode: "garis" as "garis" | "tick", interval: 1 / 60 });
+  const perbaruiGridRef = useRef<() => void>(() => {});
 
   // ---------- inisialisasi peta layout (menunggu div tersedia) ----------
   useEffect(() => {
@@ -174,6 +201,8 @@ export default function LayoutView() {
     };
     map.on("zoomend", perbaruiSkala);
     map.on("moveend", perbaruiSkala);
+    const gridEv = () => perbaruiGridRef.current();
+    map.on("move zoom viewreset resize", gridEv);
     mapRef.current = map;
     layerRef.current = L.layerGroup().addTo(map);
     (window as unknown as Record<string, unknown>).__layoutMap = map;
@@ -183,6 +212,7 @@ export default function LayoutView() {
     }, 100);
 
     return () => {
+      map.off("move zoom viewreset resize", gridEv);
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
@@ -321,7 +351,7 @@ export default function LayoutView() {
     return () => clearTimeout(t);
   }, [skalaInput]);
 
-  // ganti orientasi → peta sesuaikan ukuran kertas baru (ulang skala/fit)
+  // ganti orientasi / aktifkan grid (bingkai melebar utk kolam label) → peta sesuaikan ukuran baru
   useEffect(() => {
     if (view !== "layout" || !mapRef.current) return;
     const t = setTimeout(() => {
@@ -340,12 +370,92 @@ export default function LayoutView() {
       }
     }, 200);
     return () => clearTimeout(t);
-  }, [orientasi, view]);
+  }, [orientasi, view, gridAktif]);
 
   // sub-judul: saat otomatis diturunkan langsung dari skala & tanggal (tanpa efek)
   const subJudulTampil = subJudulOtomatis
     ? `Skala ${skalaKini ? "1/" + formatAngka(skalaKini) : "±"} • tanggal ${tanggalKini()}`
     : subJudul;
+
+  // ---------- render grid koordinat DMS (imperatif — dipanggil tiap peta bergerak) ----------
+  // CATATAN: didefinisikan & disinkronkan SEBELUM early-return view agar urutan hook selalu sama.
+  const perbaruiGrid = () => {
+    const map = mapRef.current;
+    const gL = garisGridRef.current;
+    const lL = labelGridRef.current;
+    const sheet = sheetRef.current;
+    if (!map || !gL || !lL || !sheet) return;
+    gL.innerHTML = "";
+    lL.innerHTML = "";
+    const o = gridOptRef.current;
+    if (!o.aktif) return;
+    const W = sheet.offsetWidth;
+    const H = sheet.offsetHeight;
+    // kolam label — HARUS cocok dgn kelas CSS bingkai saat grid aktif
+    const kiri = 54;
+    const atas = 104;
+    const bawah = 88;
+    const chip = (teks: string, style: string) =>
+      `<div style="position:absolute;background:#fff;border:1px solid #64748b;border-radius:3px;padding:0 3px;font:600 8px/13px ui-sans-serif,system-ui,sans-serif;color:#0f172a;white-space:nowrap;${style}">${teks}</div>`;
+    const peringatan = (teks: string) =>
+      chip(teks, `left:${W / 2}px;top:${atas - 14}px;transform:translateX(-50%);background:#fff7ed;border-color:#fdba74;color:#9a3412`);
+    try {
+      const b = map.getBounds();
+      const step = o.interval;
+      if (!(step > 0)) {
+        lL.innerHTML = peringatan("Interval grid tidak boleh 0");
+        return;
+      }
+      const nB = Math.floor((b.getEast() - b.getWest()) / step + 1e-9);
+      const nL = Math.floor((b.getNorth() - b.getSouth()) / step + 1e-9);
+      if (nB > 60 || nL > 60) {
+        lL.innerHTML = peringatan("Grid terlalu rapat — perbesar interval");
+        return;
+      }
+      let garisHtml = "";
+      let labelHtml = "";
+      // ---- meridian (bujur tetap): garis vertikal + tick & label di sisi ATAS & BAWAH
+      for (let lng = Math.ceil(b.getWest() / step) * step, i = 0; i <= nB && lng <= b.getEast() + 1e-9; lng += step, i++) {
+        const x = Math.round(map.latLngToContainerPoint([b.getCenter().lat, lng]).x);
+        if (o.mode === "garis")
+          garisHtml += `<div style="position:absolute;top:0;bottom:0;left:${x}px;border-left:1px dashed #64748b;opacity:.8"></div>`;
+        garisHtml += `<div style="position:absolute;top:0;left:${x - 1}px;width:2px;height:8px;background:#0f172a"></div>`;
+        garisHtml += `<div style="position:absolute;bottom:0;left:${x - 1}px;width:2px;height:8px;background:#0f172a"></div>`;
+        const lb = formatDMS(lng, "lng");
+        labelHtml += chip(lb, `left:${kiri + x}px;top:${atas - 14}px;transform:translateX(-50%)`);
+        labelHtml += chip(lb, `left:${kiri + x}px;top:${H - bawah + 2}px;transform:translateX(-50%)`);
+      }
+      // ---- paralel (lintang tetap): garis horizontal + tick & label di sisi KIRI & KANAN
+      for (let lat = Math.ceil(b.getSouth() / step) * step, i = 0; i <= nL && lat <= b.getNorth() + 1e-9; lat += step, i++) {
+        const y = Math.round(map.latLngToContainerPoint([lat, b.getCenter().lng]).y);
+        if (o.mode === "garis")
+          garisHtml += `<div style="position:absolute;left:0;right:0;top:${y}px;border-top:1px dashed #64748b;opacity:.8"></div>`;
+        garisHtml += `<div style="position:absolute;left:0;top:${y - 1}px;width:8px;height:2px;background:#0f172a"></div>`;
+        garisHtml += `<div style="position:absolute;right:0;top:${y - 1}px;width:8px;height:2px;background:#0f172a"></div>`;
+        const lb = formatDMS(lat, "lat");
+        labelHtml += chip(lb, `right:${W - kiri + 3}px;top:${atas + y}px;transform:translateY(-50%)`);
+        labelHtml += chip(lb, `left:${W - kiri + 3}px;top:${atas + y}px;transform:translateY(-50%)`);
+      }
+      gL.innerHTML = garisHtml;
+      lL.innerHTML = labelHtml;
+    } catch {
+      // view peta belum siap — akan dipanggil ulang pada event berikutnya
+    }
+  };
+  useEffect(() => {
+    perbaruiGridRef.current = perbaruiGrid;
+  });
+
+  // opsi grid berubah → simpan ke ref + render ulang
+  useEffect(() => {
+    gridOptRef.current = {
+      aktif: gridAktif,
+      mode: gridMode,
+      interval: gridInt.d + gridInt.m / 60 + gridInt.s / 3600,
+    };
+    const t = setTimeout(() => perbaruiGridRef.current(), 30);
+    return () => clearTimeout(t);
+  }, [gridAktif, gridMode, gridInt]);
 
   if (view !== "layout") return null;
 
@@ -731,9 +841,15 @@ export default function LayoutView() {
         {/* Bingkai peta */}
         <div
           ref={bingkaiRef}
-          className="absolute left-8 right-8 top-[86px] bottom-[70px] border border-slate-400 overflow-hidden rounded-sm"
+          className={`absolute ${
+            gridAktif
+              ? "left-[54px] right-[54px] top-[104px] bottom-[88px]"
+              : "left-8 right-8 top-[86px] bottom-[70px]"
+          } border border-slate-400 overflow-hidden rounded-sm`}
         >
           <div ref={setMapDiv} className="h-full w-full" style={{ backgroundColor: "#ffffff" }} />
+          {/* Grid koordinat DMS: garis putus-putus / tick — dirender imperatif, terpotong rapi oleh bingkai */}
+          <div ref={garisGridRef} className="pointer-events-none absolute inset-0 z-[460]" />
           {/* Logo arah utara — gaya/posisi/ukuran dari Panel Layout, bisa diseret */}
           {(() => {
             const gayaAktif = GAYA_UTARA.find((g) => g.id === gayaUtara) ?? GAYA_UTARA[0];
@@ -807,6 +923,9 @@ export default function LayoutView() {
             </p>
           )}
         </div>
+
+        {/* Label DMS grid koordinat — DI LUAR bingkai peta (kolam margin sheet, gaya peta topografi) */}
+        <div ref={labelGridRef} className="pointer-events-none absolute inset-0 z-[640]" />
 
         {/* Foto-foto yang ditempel ke sheet — bisa diseret & diubah ukurannya */}
         {fotoList.map((f) => {
@@ -908,6 +1027,112 @@ export default function LayoutView() {
                   <p className="text-[10px] text-slate-400 mt-1">
                     Tanpa peta dasar — latar putih polos, hanya data (titik/poligon/kontur/label) yang tampil.
                   </p>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-slate-500">Grid koordinat (DMS)</p>
+                  <label className="flex cursor-pointer items-center gap-1 text-[10px] text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={gridAktif}
+                      onChange={(e) => setGridAktif(e.target.checked)}
+                    />
+                    Tampil
+                  </label>
+                </div>
+                {gridAktif && (
+                  <>
+                    <div className="flex gap-1.5">
+                      {(
+                        [
+                          ["garis", "Garis putus-putus"],
+                          ["tick", "Garis pendek (tick)"],
+                        ] as const
+                      ).map(([m, label]) => (
+                        <button
+                          key={m}
+                          onClick={() => setGridMode(m)}
+                          aria-pressed={gridMode === m}
+                          className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] font-medium ${
+                            gridMode === m ? "bg-blue-600 text-white" : "bg-slate-100 hover:bg-slate-200"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs font-semibold text-slate-500 mt-2.5 mb-1">Interval garis</p>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        max={179}
+                        value={gridInt.d}
+                        onChange={(e) =>
+                          setGridInt((v) => ({ ...v, d: Math.min(179, Math.max(0, parseInt(e.target.value || "0", 10) || 0)) }))
+                        }
+                        aria-label="Interval derajat"
+                        className="w-11 rounded-lg border border-slate-300 px-1.5 py-1 text-center text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-slate-400">°</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={gridInt.m}
+                        onChange={(e) =>
+                          setGridInt((v) => ({ ...v, m: Math.min(59, Math.max(0, parseInt(e.target.value || "0", 10) || 0)) }))
+                        }
+                        aria-label="Interval menit"
+                        className="w-11 rounded-lg border border-slate-300 px-1.5 py-1 text-center text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-slate-400">&apos;</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={gridInt.s}
+                        onChange={(e) =>
+                          setGridInt((v) => ({ ...v, s: Math.min(59, Math.max(0, parseInt(e.target.value || "0", 10) || 0)) }))
+                        }
+                        aria-label="Interval detik"
+                        className="w-11 rounded-lg border border-slate-300 px-1.5 py-1 text-center text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-slate-400">&quot;</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {(
+                        [
+                          [0, 0, 30, '30"'],
+                          [0, 1, 0, "1'"],
+                          [0, 2, 0, "2'"],
+                          [0, 5, 0, "5'"],
+                          [0, 10, 0, "10'"],
+                          [0, 30, 0, "30'"],
+                          [1, 0, 0, "1°"],
+                        ] as const
+                      ).map(([d, m, s, lbl]) => (
+                        <button
+                          key={lbl}
+                          onClick={() => setGridInt({ d, m, s })}
+                          className={`rounded-md px-1.5 py-0.5 text-[10px] ${
+                            gridInt.d === d && gridInt.m === m && gridInt.s === s
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 hover:bg-blue-100 text-slate-600"
+                          }`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5 flex items-start gap-1">
+                      <Move className="h-3 w-3 shrink-0 mt-0.5" />
+                      Label derajat-menit-detik tampil di 4 sisi bingkai (bujur atas-bawah, lintang kiri-kanan);
+                      bingkai dilebarkan otomatis agar ada ruang label. Ikut tercetak di PDF/PNG.
+                    </p>
+                  </>
                 )}
               </div>
 

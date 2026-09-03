@@ -10,9 +10,40 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { MapPin, Type, Shapes, Camera, X, Trash2, Loader2 } from "lucide-react";
+import { MapPin, Type, Shapes, Camera, X, Trash2, Loader2, Sticker } from "lucide-react";
+import { DAFTAR_IKON, htmlPolos, ikonHtml } from "@/lib/gis/ikon-titik";
 
 const WARNA = ["#2563eb", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#0ea5e9", "#f97316", "#64748b"];
+
+/** Pratinjau ikon penanda untuk tombol picker (SVG inline ringan). */
+function IkonPratinjau({ id }: { id: string }) {
+  const html = ikonHtml(id === "polos" ? undefined : id, false) ?? htmlPolos;
+  return <span className="pointer-events-none block" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** Grid pilihan ikon titik (polos + 10 ikon FO/pin) — dipakai dialog titik & dialog massal. */
+function PemilihIkon({ nilai, pilih }: { nilai: string; pilih: (id: string) => void }) {
+  return (
+    <div className="grid grid-cols-6 gap-1.5">
+      {[{ id: "polos", nama: "Titik Polos (bulat)" }, ...DAFTAR_IKON].map((it) => (
+        <button
+          key={it.id}
+          type="button"
+          onClick={() => pilih(it.id)}
+          title={it.nama}
+          aria-pressed={nilai === it.id}
+          className={`flex h-11 items-center justify-center rounded-lg border ${
+            nilai === it.id
+              ? "border-blue-600 bg-blue-50 ring-2 ring-blue-500"
+              : "border-slate-200 bg-white hover:bg-slate-100"
+          }`}
+        >
+          <IkonPratinjau id={it.id} />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function kompresFoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -63,6 +94,7 @@ function PointForm({
   const [elevation, setElevation] = useState(awal?.elevation != null ? String(awal.elevation) : "");
   const [photo, setPhoto] = useState<string | undefined>(awal?.photo);
   const [labelTampil, setLabelTampil] = useState(awal?.labelTampil ?? false);
+  const [ikon, setIkon] = useState(awal?.ikon ?? "polos");
   const [loadingFoto, setLoadingFoto] = useState(false);
 
   const simpan = () => {
@@ -82,6 +114,7 @@ function PointForm({
         source: "manual",
         visible: true,
         labelTampil,
+        ikon: ikon !== "polos" ? ikon : undefined,
         layerId: pastikanLayerManualSekarang(),
       });
       // elevasi kosong → ambil otomatis dari DEM satelit (tak menimpa isi manual)
@@ -102,6 +135,7 @@ function PointForm({
         elevation: elev != null && !isNaN(elev) ? elev : null,
         photo,
         labelTampil,
+        ikon: ikon !== "polos" ? ikon : undefined,
       });
       toast.success("Titik diperbarui");
     }
@@ -136,6 +170,16 @@ function PointForm({
           <div className="space-y-1.5">
             <Label htmlFor="pt-elev">Ketinggian / elevasi (m) — untuk kontur &amp; volume</Label>
             <Input id="pt-elev" type="number" step="0.01" className="rounded-xl" value={elevation} onChange={(e) => setElevation(e.target.value)} placeholder="Misal: 325.5" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <Sticker className="h-3.5 w-3.5 text-slate-400" />
+              Ikon penanda titik
+            </Label>
+            <PemilihIkon nilai={ikon} pilih={setIkon} />
+            <p className="text-[10px] text-slate-400">
+              Ikon as-built jaringan fiber optik: tiang tumpu, ODP, ODC, closure, handhole, menara + pin warna.
+            </p>
           </div>
           <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
             <input
@@ -423,6 +467,59 @@ function ShapeForm({
           </Button>
           <Button className="rounded-xl" onClick={simpan}>
             Simpan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Ganti ikon penanda SEKALIGUS untuk semua titik terpilih (hasil Blok). */
+export function IkonTitikDialog() {
+  const open = useGis((s) => s.dialogs.ikonTitik);
+  const setDialog = useGis((s) => s.setDialog);
+  const selection = useGis((s) => s.selection);
+  const points = useGis((s) => s.points);
+  const [ikon, setIkon] = useState("odp");
+
+  if (!open) return null;
+
+  const idsTitik = points.filter((p) => selection.includes(p.id)).map((p) => p.id);
+
+  const terapkan = () => {
+    if (idsTitik.length === 0) return;
+    const st = useGis.getState();
+    idsTitik.forEach((id) => st.updatePoint(id, { ikon: ikon !== "polos" ? ikon : undefined }));
+    toast.success(`Ikon diterapkan ke ${idsTitik.length} titik`, {
+      description: ikon === "polos" ? "Kembali ke titik polos (bulat)." : DAFTAR_IKON.find((x) => x.id === ikon)?.nama,
+    });
+    setDialog("ikonTitik", false);
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && setDialog("ikonTitik", false)}>
+      <DialogContent className="rounded-2xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sticker className="h-5 w-5 text-primary" />
+            Ikon Titik Terpilih
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-slate-500 -mt-2">
+          {idsTitik.length > 0
+            ? `${idsTitik.length} titik terpilih akan diberi ikon yang sama — cocok untuk mengganti penanda as-built jaringan FO secara massal.`
+            : "Belum ada titik terpilih. Gunakan menu Blok (drag kotak di peta) lalu buka dialog ini lagi."}
+        </p>
+        <div className="space-y-1.5">
+          <Label>Pilih ikon</Label>
+          <PemilihIkon nilai={ikon} pilih={setIkon} />
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" className="rounded-xl" onClick={() => setDialog("ikonTitik", false)}>
+            Batal
+          </Button>
+          <Button className="rounded-xl" onClick={terapkan} disabled={idsTitik.length === 0}>
+            Terapkan ({idsTitik.length})
           </Button>
         </DialogFooter>
       </DialogContent>

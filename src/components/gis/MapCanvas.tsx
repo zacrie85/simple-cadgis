@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useGis } from "@/lib/gis/store";
 import { warnaElevasi } from "@/lib/gis/contours";
 import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
+import { ikonDivIcon } from "@/lib/gis/ikon-divicon";
 import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
 
 const RENDER_CAP = 20000; // batas keras titik dirender (data lengkap tetap di memori/tabel)
@@ -151,8 +152,9 @@ export default function MapCanvas() {
   const rendererKonturRef = useRef<L.Canvas | null>(null);
   // Referensi marker titik (id → marker) + gaya terakhirnya → pembaruan gaya INKREMENTAL
   // tanpa membangun ulang puluhan ribu marker setiap seleksi/urutan berubah.
-  const markerTitikRef = useRef<Map<string, L.CircleMarker>>(new Map());
-  const gayaTitikRef = useRef<Map<string, { sel: boolean; urut: boolean }>>(new Map());
+  // Marker bisa L.CircleMarker (titik polos, kanvas) atau L.Marker (titik berikon divIcon).
+  const markerTitikRef = useRef<Map<string, L.CircleMarker | L.Marker>>(new Map());
+  const gayaTitikRef = useRef<Map<string, { sel: boolean; urut: boolean; ikon?: string }>>(new Map());
   const rasterRef = useRef<Map<string, L.ImageOverlay>>(new Map());
 
   const points = useGis((s) => s.points);
@@ -741,11 +743,17 @@ export default function MapCanvas() {
       if (!p.visible) continue; // disembunyikan per fitur / per layer
       const terpilih = selSet.has(p.id);
       const dalamUrutan = urutSet.has(p.id);
-      const marker = L.circleMarker([p.lat, p.lng], {
-        renderer,
-        radius: terpilih || dalamUrutan ? 7 : 5,
-        ...gayaTitik(terpilih, dalamUrutan),
-      });
+      // Titik berikon (as-built FO) → L.Marker divIcon SVG; polos → circleMarker kanvas (ringan)
+      let marker: L.CircleMarker | L.Marker;
+      if (p.ikon && p.ikon !== "polos") {
+        marker = L.marker([p.lat, p.lng], { icon: ikonDivIcon(p.ikon, terpilih || dalamUrutan) });
+      } else {
+        marker = L.circleMarker([p.lat, p.lng], {
+          renderer,
+          radius: terpilih || dalamUrutan ? 7 : 5,
+          ...gayaTitik(terpilih, dalamUrutan),
+        });
+      }
       marker.on("click", () => {
         const st = useGis.getState();
         // dialog "Dari Titik" terbuka: klik titik = tambah ke urutan sambungan
@@ -781,7 +789,7 @@ export default function MapCanvas() {
       }
       marker.addTo(l.points);
       mm.set(p.id, marker);
-      gm.set(p.id, { sel: terpilih, urut: dalamUrutan });
+      gm.set(p.id, { sel: terpilih, urut: dalamUrutan, ikon: p.ikon });
     }
   }, [points, labelMode, perf.batasRender, perf.batasLabel]);
 
@@ -798,9 +806,14 @@ export default function MapCanvas() {
       const dalamUrutan = urutSet.has(id);
       const lama = gayaTitikRef.current.get(id);
       if (lama && lama.sel === terpilih && lama.urut === dalamUrutan) return;
-      marker.setStyle(gayaTitik(terpilih, dalamUrutan));
-      marker.setRadius(terpilih || dalamUrutan ? 7 : 5);
-      gayaTitikRef.current.set(id, { sel: terpilih, urut: dalamUrutan });
+      if (marker instanceof L.Marker) {
+        // titik berikon: ganti ikon dgn versi ber-halo biru saat terpilih/diurutan
+        if (lama?.ikon) marker.setIcon(ikonDivIcon(lama.ikon, terpilih || dalamUrutan));
+      } else {
+        marker.setStyle(gayaTitik(terpilih, dalamUrutan));
+        marker.setRadius(terpilih || dalamUrutan ? 7 : 5);
+      }
+      gayaTitikRef.current.set(id, { sel: terpilih, urut: dalamUrutan, ikon: lama?.ikon });
     });
   }, [selection, urutanPoligon]);
 

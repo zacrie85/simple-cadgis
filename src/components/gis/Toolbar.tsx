@@ -39,6 +39,7 @@ import {
   EyeOff,
   Waypoints,
   Gauge,
+  Sticker,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -169,6 +170,15 @@ export default function Toolbar() {
           onClick: hapusTerpilih,
           disabled: jumlahTerpilih === 0,
           bahaya: true,
+        },
+        {
+          label: "Ikon",
+          icon: Sticker,
+          title:
+            "Ganti ikon penanda titik terpilih sekaligus (hasil Blok) — ikon as-built jaringan FO: tiang tumpu, ODP, ODC, closure, handhole, menara + pin warna",
+          onClick: () => s.setDialog("ikonTitik", true),
+          active: s.dialogs.ikonTitik,
+          disabled: !s.points.some((p) => s.selection.includes(p.id)),
         },
       ],
     },

@@ -7,7 +7,7 @@ import { DrawChip, MeasureChip } from "./Chips";
 import ImportDialog from "./dialogs/ImportDialog";
 import ExportDialog from "./dialogs/ExportDialog";
 import DataTableWindow from "./dialogs/DataTableWindow";
-import { PointDialog, TextDialog, ShapeInfoDialog } from "./dialogs/FeatureDialogs";
+import { PointDialog, TextDialog, ShapeInfoDialog, IkonTitikDialog } from "./dialogs/FeatureDialogs";
 import { ContourDialog, VolumeDialog } from "./dialogs/AnalysisDialogs";
 import ElevasiDialog from "./dialogs/ElevasiDialog";
 import PoligonTitikDialog from "./dialogs/PoligonTitikDialog";
@@ -56,6 +56,7 @@ export default function GisApp() {
         <PointDialog />
         <TextDialog />
         <ShapeInfoDialog />
+        <IkonTitikDialog />
         <ContourDialog />
         <VolumeDialog />
         <ElevasiDialog />
