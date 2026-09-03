@@ -689,3 +689,19 @@ Work Log:
 
 Stage Summary:
 - FITUR BARU LIVE DI DEV: (A) grid koordinat DMS layout cetak — interval manual derajat/menit/detik, garis putus-putus silang atau tick pendek, label 4 sisi gaya peta topografi, ikut tercetak PDF/PNG; (B) 10 ikon titik as-built FO + pin warna — pilih saat buat titik, ubah lewat Edit titik, atau ganti massal utk titik hasil Blok; ikut Simpan/Muat proyek & tersimpan di sesi. Menunggu konfirmasi user → rilis v1.4.0.
+
+---
+Task ID: 30-rilis
+Agent: Super Z (main agent)
+Task: Rilis v1.4.0 setelah konfirmasi user "berhasil" (user kirim token GitHub baru karena token lama sudah dicabut).
+
+Work Log:
+- Verifikasi state: commit Task 30 (25dcaf1) SUDAH terpush & Pages sudah deploy (ref origin/main lokal hanya stale — push via URL tidak update remote-tracking). SW live = v5.
+- Bump package.json 1.3.4 → 1.4.0, commit 23956a3, tag anotasi v1.4.0.
+- Push main + v1.4.0 dgn token baru user (output di-redact ghp_[REDACTED]).
+- CI: "Deploy ke GitHub Pages" → success; "Build Installer Desktop (Windows)" → success.
+- Verifikasi: Release "SIMPLE CADGIS v1.4.0" + aset SIMPLE-CADGIS-Setup-1.4.0.exe (188 MB, HEAD 206 OK); Pages 200; sw.js live = simplecadgis-v5.
+
+Stage Summary:
+- RILIS v1.4.0 SELESAI (web + installer): berisi grid koordinat DMS pada layout cetak (interval manual D/M/S, 2 mode garis: putus-putus silang / tick pendek, label 4 sisi gaya peta topografi, ikut PDF/PNG) + 10 ikon titik as-built fiber optik (pin warna, tiang tumpu, ODP, ODC, closure, handhole, menara) dgn pemilih per titik di dialog buat/edit + ganti massal utk titik hasil Blok.
+- Token baru user dipakai utk push ini; ingatkan mencabut (revoke) setelah sesi.
