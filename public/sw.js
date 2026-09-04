@@ -1,5 +1,5 @@
 /* SIMPLE CADGIS service worker — cache sederhana agar aplikasi bisa di-install & offline */
-const CACHE = "simplecadgis-v14";
+const CACHE = "simplecadgis-v15";
 const CORE = ["./", "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -2,7 +2,7 @@
 
 /**
  * Dialog Impor Raster Georeferensi (GeoTIFF / ECW).
- * - GeoTIFF (.tif/.tiff) hingga 500 MB: dibaca bertahap di Web Worker
+ * - GeoTIFF (.tif/.tiff) hingga 1 TB: dibaca bertahap di Web Worker
  *   → pratinjau overlay di peta pada koordinat yang benar, UI tidak pernah beku.
  * - DEM 1 band otomatis terdeteksi → bisa dipakai sumber elevasi LOKAL di menu Elevasi DEM.
  * - ECW: tidak ada dekoder browser (lisensi proprietary) → tampilkan panduan konversi via QGIS/GDAL.
@@ -30,7 +30,7 @@ import {
   Download,
 } from "lucide-react";
 
-const UKURAN_MAKS = 500 * 1024 * 1024; // 500 MB
+const UKURAN_MAKS = 1024 * 1024 * 1024 * 1024; // 1 TB
 
 export default function RasterDialog() {
   const open = useGis((s) => s.dialogs.raster);
@@ -81,8 +81,10 @@ export default function RasterDialog() {
       return;
     }
     if (file.size > UKURAN_MAKS) {
+      const mb = file.size / 1048576;
+      const ukuran = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
       toast.error("File terlalu besar", {
-        description: `Ukuran ${(file.size / 1048576).toFixed(0)} MB melebihi batas 500 MB. Kompres/potong dulu via QGIS (kompresi JPEG atau Deflate).`,
+        description: `Ukuran ${ukuran} melebihi batas 1 TB. Kompres/potong dulu via QGIS (kompresi JPEG atau Deflate).`,
       });
       return;
     }
@@ -179,7 +181,7 @@ export default function RasterDialog() {
                 </button>
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                GeoTIFF (.tif / .tiff) — maksimal 500 MB • orthophoto/citra &amp; DEM
+                GeoTIFF (.tif / .tiff) — maksimal 1 TB • orthophoto/citra &amp; DEM
               </p>
               <input
                 ref={inputRef}

@@ -938,3 +938,21 @@ Work Log:
 Stage Summary:
 - RILIS v1.8.0 BERHASIL: Pages live (SW v14) + installer exe terverifikasi. Isi rilis: Titik Terdekat; GAMBAR›Panah; alat GAMBAR jadi anotasi di Layout; GAMBAR›Kotak 2-klik; transparansi isi bentuk 0-100% s/d solid.
 - Token PAT lama tetap disarankan di-revoke owner.
+
+---
+Task ID: 42
+Agent: Super Z (main)
+Task: Task 42 — naikkan batas ukuran file raster (GeoTIFF) dari 500 MB menjadi 1 TB (jalur ECW = konversi via ECW Bridge → hasil .tif ikut batas baru)
+
+Work Log:
+- Grep "500 MB|UKURAN_MAKS": 3 file kode + SW. Skrip ECW Bridge (public/ecw-bridge-qgis.py) tidak punya batas ukuran — aman.
+- raster-worker.ts: UKURAN_MAKS 500 MB → 1024^4 (1 TB); pesan error baru dgn format otomatis GB/MB (≥1024 MB tampil "x.x GB"); komentar header diperbarui. Bacaan tetap bertahap byte-range (pratinjau ≤2048 px, grid DEM ≤12 jt px) — memori terkendali meski file raksasa.
+- RasterDialog.tsx: UKURAN_MAKS idem; toast error + teks area drop "maksimal 1 TB"; komentar header.
+- Toolbar.tsx: tooltip menu Raster "maks 1 TB".
+- package.json 1.8.0 → 1.9.0; SW v14 → v15.
+- lint + tsc + build BERSIH.
+- Uji e2e browser: login → BERKAS›Raster → tooltip & dialog "maksimal 1 TB" terverifikasi; buat GeoTIFF uji (scripts/buat-uji-tif.py, 160×120 px WGS84 ±11 m/px, tifffile + GeoKeys 4326) → injeksi DataTransfer ke input (event change manual tak nyangkut React; fetch+DataTransfer+dispatch jalan) → worker terima → overlay dibuat: "uji-raster.tif — 160×120 px • EPSG:4326 (WGS84) • ±11 m/piksel" → leaflet-image-layer muncul di peta. Catatan: heading list "RASTER TERIMPOR (1)" uppercase via CSS — jangan cek case-sensitive.
+- Bukti: scripts/uji-raster-1tb-impor.png, uji-raster-1tb-peta.png.
+
+Stage Summary:
+- Batas impor raster naik 500 MB → 1 TB (ECW via ECW Bridge ikut, karena hasil konversi .tif). Arsitektur baca bertahap membuat memori tetap aman utk file besar. Persiapan rilis v1.9.0 (tag menunggu konfirmasi user).

@@ -1,6 +1,6 @@
 {
   "name": "simple-cadgis",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "description": "SIMPLE CADGIS — aplikasi GIS web: peta, kontur, cut & fill, ekspor SHP/KMZ/Excel, layout cetak. Bisa dipasang di PC (Windows).",
   "author": "zacrie85",
@@ -13,7 +13,9 @@
     "electron:dev": "electron .",
     "dist:win": "electron-builder --win nsis"
   },
-  "trustedDependencies": ["electron"],
+  "trustedDependencies": [
+    "electron"
+  ],
   "build": {
     "appId": "com.zacrie.simplecadgis",
     "productName": "SIMPLE CADGIS",
@@ -22,13 +24,21 @@
       "output": "dist-desktop",
       "buildResources": "electron"
     },
-    "files": ["electron/main.cjs", "electron/icon.png", "out/**/*"],
+    "files": [
+      "electron/main.cjs",
+      "electron/icon.png",
+      "out/**/*"
+    ],
     "win": {
       "icon": "electron/icon.png",
-      "target": [{
-        "target": "nsis",
-        "arch": ["x64"]
-      }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

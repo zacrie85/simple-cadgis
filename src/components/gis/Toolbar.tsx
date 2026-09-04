@@ -126,7 +126,7 @@ export default function Toolbar() {
       nama: "Berkas",
       items: [
         { label: "Impor", icon: Upload, title: "Impor Excel / CSV / KML / KMZ", onClick: () => s.setDialog("import", true) },
-        { label: "Raster", icon: ImageIcon, title: "Impor peta raster georeferensi (GeoTIFF): orthophoto/citra sebagai overlay & DEM sebagai sumber elevasi lokal — maks 500 MB. File ECW harus dikonversi dulu ke GeoTIFF via QGIS.", onClick: () => s.setDialog("raster", true), active: s.dialogs.raster },
+        { label: "Raster", icon: ImageIcon, title: "Impor peta raster georeferensi (GeoTIFF): orthophoto/citra sebagai overlay & DEM sebagai sumber elevasi lokal — maks 1 TB. File ECW harus dikonversi dulu ke GeoTIFF via QGIS.", onClick: () => s.setDialog("raster", true), active: s.dialogs.raster },
         { label: "Tabel", icon: Table2, title: "Buka tabel data", onClick: () => s.setDialog("table", true), active: s.dialogs.table },
         { label: "Ekspor", icon: Download, title: "Ekspor ke KMZ / Excel / SHP", onClick: () => s.setDialog("export", true) },
         { label: "Simpan", icon: Save, title: "Simpan proyek ke file .cadgis.json (semua data + layer)", onClick: () => s.setDialog("simpan", true), active: s.dialogs.simpan },

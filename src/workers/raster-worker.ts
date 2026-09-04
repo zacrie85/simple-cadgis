@@ -1,5 +1,5 @@
 /**
- * Web Worker raster SIMPLE CADGIS — impor GeoTIFF (orthophoto/citra & DEM) hingga 500 MB
+ * Web Worker raster SIMPLE CADGIS — impor GeoTIFF (orthophoto/citra & DEM) hingga 1 TB
  * TANPA membekukan UI: metadata → pratinjau (bertahap per blok baris / overview) →
  * gambar PNG/JPEG → sampling elevasi per titik (bilinear, lokal, tanpa internet).
  *
@@ -52,7 +52,7 @@ const ctx = self as unknown as {
   addEventListener: (t: "message", cb: (e: MessageEvent<Masuk>) => void) => void;
 };
 
-const UKURAN_MAKS = 500 * 1024 * 1024; // 500 MB
+const UKURAN_MAKS = 1024 * 1024 * 1024 * 1024; // 1 TB — baca bertahap (byte-range) jadi memori tetap terkendali
 const PRATINJAU_MAKS = 2048; // dimensi pratinjau (px)
 const BLOK_PIKSEL = 2_000_000; // piksel sumber per blok baca (hemat memori)
 const MAKS_GRID_ELEVASI = 12_000_000; // ≤12 juta px → DEM dibaca utuh sekali (±48 MB)
@@ -169,8 +169,10 @@ function bilinear(
 /** ====== BUKA RASTER: metadata + pratinjau ====== */
 async function bukaRaster(id: string, file: File) {
   if (file.size > UKURAN_MAKS) {
+    const mb = file.size / 1048576;
+    const ukuran = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
     throw new Error(
-      `Ukuran file ${(file.size / 1048576).toFixed(0)} MB melebihi batas 500 MB. Kompres dulu (QGIS: Raster → Conversion → Translate, kompresi JPEG/Deflate) atau potong per wilayah.`
+      `Ukuran file ${ukuran} melebihi batas 1 TB. Kompres dulu (QGIS: Raster → Conversion → Translate, kompresi JPEG/Deflate) atau potong per wilayah.`
     );
   }
   const nama = file.name.toLowerCase();
