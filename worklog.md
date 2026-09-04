@@ -1068,3 +1068,21 @@ Stage Summary:
 - Raster georeferensi (gambar+world file, GeoTIFF pratinjau, maupun tile piramida) kini TAMPIL di menu Layout — di atas basemap, di bawah vektor — dengan toggle panel, entri legenda, ikut Pas otomatis, dan ikut terekspor PDF/PNG.
 - Skala cetak otomatis kini memperhitungkan cakupan raster (mis. ortho ±103×71 m → skala 1:513 pada A4 lanskap).
 - Catatan: piramida besar di layout memakai tile IndexedDB yang sama dgn peta utama; bila piramida gagal/terhapus, pratinjau ≤2048 px yang dipakai (sama seperti peta utama).
+
+---
+Task ID: 49
+Agent: Super Z (main)
+Task: Task 49 — RILIS v1.9.0 (permintaan user: "mau kawan rilis v1.9.0 sekarang")
+
+Work Log:
+- Pra-rilis: package.json sudah 1.9.0, work tree bersih, main ter-push (7a7041c), tag lokal & remote tertinggal v1.8.0.
+- Tag annotasi v1.9.0 dibuat pada 7a7041c (pesan berisi ringkasan 6 fitur raster) → push origin v1.9.0.
+- Actions: "Build Installer Desktop (Windows)" run 33880618995 terpicu oleh tag → in_progress ± 9 menit → SUCCESS. "Deploy ke GitHub Pages" (main) sudah SUCCESS sebelumnya (13:41) — versi web sudah live lebih dulu.
+- Verifikasi Pages live: sw.js = simplecadgis-v21 (terbaru), index.html normal.
+- Verifikasi release API: "SIMPLE CADGIS v1.9.0", bukan draft/prerelease, asset SIMPLE-CADGIS-Setup-1.9.0.exe 197,7 MB, browser_download_url benar.
+- Verifikasi unduh ANONIM (tanpa Authorization — tidak mengikuti redirect ke S3): 197.695.445 byte, header MZ + PE\\0\\0 pada e_lfanew 0xd8 → installer EXE valid. File uji dihapus setelah cek.
+
+Stage Summary:
+- v1.9.0 TERBIT: https://github.com/zacrie85/simple-cadgis/releases/tag/v1.9.0 — installer Windows valid & bisa diunduh publik; Pages live dgn SW v21.
+- Isi v1.9.0 (akumulasi Task 42-48): batas impor raster 1 TB, konverter piramida otomatis, zoom ke raster, CRS luas (WGS84/UTM, SRGI2013 9470+UTM 9476-9494, TM-3 DGN95 23830-23845, DGN95 4755, Web Mercator, EPSG:9377), impor gambar+world file dgn alur pemaaf + pratinjau lokasi + sniffer format, raster tampil di Layout (toggle, legenda, Pas otomatis, ikut ekspor PDF/PNG).
+- Catatan keamanan berulang: PAT ghp_6CGl… dipakai lagi pada sesi ini — SEGERA revoke & ganti.
