@@ -68,3 +68,5 @@ scripts/*.tif
 scripts/*.tfw
 scripts/*.pgw
 public/*.tif
+public/*.tfw
+public/*.pgw

@@ -2,8 +2,10 @@
  * Web Worker raster SIMPLE CADGIS — impor GeoTIFF (orthophoto/citra & DEM) hingga 1 TB
  * TANPA membekukan UI: metadata → pratinjau (bertahap per blok baris / overview) →
  * gambar PNG/JPEG → sampling elevasi per titik (bilinear, lokal, tanpa internet).
- * CRS didukung: WGS84 (4326/4269), DGN95 geografis (4755), UTM WGS84 semua zona
- * (326xx/327xx), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), 9377.
+ * CRS didukung: WGS84 (4326/4269), DGN95 geografis (4755), SRGI2013 (9470),
+ * UTM WGS84 semua zona (326xx/327xx), UTM SRGI2013 (9476–9484 zona N,
+ * 9486–9494 zona S), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845),
+ * 9377 (MAGNA-SIRGAS / Origen-Nacional).
  * Selain itu: gambar biasa (PNG/JPEG) + world file (.tfw/.jgw/.pgw) — zona UTM/TM-3
  * dipilih pemakai; koordinat derajat terdeteksi otomatis.
  *
@@ -113,8 +115,9 @@ function kirim(id: string, persen: number, tahap: string) {
 }
 
 /**
- * Definisi proj4 dari GeoKeys — dukung WGS84 & DGN95 geografis, Web Mercator,
- * seluruh zona UTM WGS84, Indonesia TM-3 DGN95 (BPN/kadaster), dan 9377.
+ * Definisi proj4 dari GeoKeys — dukung WGS84 & DGN95/SRGI2013 geografis,
+ * Web Mercator, seluruh zona UTM WGS84 & SRGI2013, Indonesia TM-3 DGN95
+ * (BPN/kadaster), dan 9377 (Origen-Nacional).
  */
 function crsDariGeoKeys(gk: Partial<Record<string, number>>): { def: string | null; label: string } {
   const proj = gk.ProjectedCSTypeGeoKey;
@@ -128,6 +131,16 @@ function crsDariGeoKeys(gk: Partial<Record<string, number>>): { def: string | nu
   if (utmS) {
     const zona = proj - 32700;
     return { def: `+proj=utm +zone=${zona} +south +datum=WGS84 +units=m +no_defs`, label: `EPSG:${proj} (UTM Zona ${zona}S)` };
+  }
+  // SRGI2013 / UTM (BIG, 2020) — EPSG 9476–9484 = zona 46N–54N, 9486–9494 = zona
+  // 46S–54S. Datum SRGI2013 ≈ WGS84 (beda < 15 cm) → definisi UTM WGS84 dipakai.
+  if (typeof proj === "number" && proj >= 9476 && proj <= 9484) {
+    const zona = proj - 9430;
+    return { def: `+proj=utm +zone=${zona} +datum=WGS84 +units=m +no_defs`, label: `EPSG:${proj} (SRGI2013 / UTM Zona ${zona}N)` };
+  }
+  if (typeof proj === "number" && proj >= 9486 && proj <= 9494) {
+    const zona = proj - 9440;
+    return { def: `+proj=utm +zone=${zona} +south +datum=WGS84 +units=m +no_defs`, label: `EPSG:${proj} (SRGI2013 / UTM Zona ${zona}S)` };
   }
   if (proj === 3857) return { def: "EPSG:3857", label: "EPSG:3857 (Web Mercator)" };
   // Indonesia TM-3 (DGN95, EPSG 23830–23845) — sistem resmi BPN utk kadaster:
@@ -148,17 +161,19 @@ function crsDariGeoKeys(gk: Partial<Record<string, number>>): { def: string | nu
     };
   }
   if (!proj || proj === 32767) {
+    // geografis: DGN95 (4755) & SRGI2013 (9470) ≈ WGS84 (beda < 1 m / < 15 cm)
     if (geo === 4755) return { def: null, label: "EPSG:4755 (DGN95 — ≈ WGS84)" };
+    if (geo === 9470) return { def: null, label: "EPSG:9470 (SRGI2013 — ≈ WGS84)" };
     if (geo && geo !== 4326 && geo !== 4269 && geo !== 32767) {
       throw new Error(
-        `Sistem koordinat EPSG:${geo} belum didukung. Yang didukung: WGS84 (4326/4755), UTM WGS84 (326xx/327xx), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), dan 9377. Simpan ulang via QGIS: Raster → Conversion → Translate, pilih salah satu CRS itu.`
+        `Sistem koordinat EPSG:${geo} belum didukung. Yang didukung: WGS84 (4326/4755), SRGI2013 (9470), UTM WGS84 (326xx/327xx), UTM SRGI2013 (9476–9494), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), dan 9377. Simpan ulang via QGIS: Raster → Conversion → Translate, pilih salah satu CRS itu.`
       );
     }
     return { def: null, label: "EPSG:4326 (WGS84)" };
   }
   if (proj) {
     throw new Error(
-      `Sistem koordinat EPSG:${proj} belum didukung. Yang didukung: WGS84 (4326/4755), UTM WGS84 (326xx/327xx), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), dan 9377. Simpan ulang via QGIS: Raster → Conversion → Translate, pilih salah satu CRS itu.`
+      `Sistem koordinat EPSG:${proj} belum didukung. Yang didukung: WGS84 (4326/4755), SRGI2013 (9470), UTM WGS84 (326xx/327xx), UTM SRGI2013 (9476–9494), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), dan 9377. Simpan ulang via QGIS: Raster → Conversion → Translate, pilih salah satu CRS itu.`
     );
   }
   return { def: null, label: "EPSG:4326 (WGS84)" };

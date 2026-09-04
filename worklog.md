@@ -1031,3 +1031,22 @@ Stage Summary:
 - FITUR BARU: impor GAMBAR (PNG/JPG — termasuk .tif hasil rename) + WORLD FILE (.tfw/.jgw/.pgw/.wld): pilih keduanya sekaligus → pilih zona UTM/TM-3 (teringat pemakaian terakhir; hemisfer otomatis) → tampil di peta pada koordinat benar; koordinat derajat (WGS84) terimpor otomatis tanpa picker.
 - Akar error "Invalid byte order value." terjawab: file .tif user sebenarnya PNG; kini pesan error menjelaskan format apa yang terdeteksi (PNG/JPG/JP2/ZIP/PDF/HDF/teks) + cara benar mengimpornya.
 - Hati-hati: world file TIDAK menyimpan CRS — zona salah = posisi salah; picker + tebakan pintar + validasi rentang derajat memitigasi.
+
+---
+Task ID: 47
+Agent: Super Z (main)
+Task: Task 47 — laporan user "Gambar tanpa world file" saat impor tes.tif+tes.tfw → alur pilih file dibuat pemaaf (boleh satu per satu), pratinjau lokasi zona, + SRGI2013 resmi (9470 & UTM 9476–9494)
+
+Work Log:
+- Verifikasi ulang file user (upload/tes.tif, upload/tes.tfw): tes.tif tetap PNG hasil rename (magic 89 50 4E 47, 693×480), tes.tfw meter UTM zona selatan (C=700157.62, F=9239054.97, A=0.148432 → ±0,15 m/px). Akar keluhan: user memilih HANYA tes.tif → toast "Gambar tanpa world file" adalah dead-end (tidak ada jalur lanjut di dialog).
+- RasterDialog.tsx — alur pairing baru yang pemaaf: state tundaGambar (gambar menunggu world file) & tundaWorld (world file menunggu gambar); helper pasangkan() (sniff PNG/JPG/TIFF + parse world file + bitmap + tebakZonaAwal); pilihFile() kini menerima pilihan sebagian: gambar saja → panel amber "Gambar siap — world file belum ada" + tombol "Pilih world file…"; world saja → panel "World file siap — gambarnya belum ada" + tombol "Pilih gambar…"; .tif dgn isi asing tetap diserahkan ke worker (pesan sniffer kaya); GeoTIFF asli langsung impor. Panel lama kini tergantikan alur non-blocking (tidak lagi toast error buntu).
+- Fitur pratinjau lokasi: useMemo pratinjauLokasi (proj4 client-side, defZona) menghitung pusat citra dari world file + zona terpilih → tampil "Lokasi kira-kira: 6,88107°LS • 106,81190°BT" di panel zona; zona salah = posisi salah jadi terlihat SEBELUM impor. Teks drop-zone & info diperbarui (pilih keduanya sekaligus, atau satu per satu).
+- raster-worker.ts — Task 45 tuntas resmi: EPSG:9377 ternyata resminya MAGNA-SIRGAS/Origen-Nacional (KOLOMBIA); SRGI2013 Indonesia yang benar = geografis EPSG:9470 (≈ WGS84, def null) + UTM SRGI2013 9476–9484 (zona 46N–54N) & 9486–9494 (zona 46S–54S, zone = kode−9440); label & daftar CRS di 2 pesan error diperbarui; header komentar disesuaikan.
+- SW v19 → v20; .gitignore += public/*.tfw & public/*.pgw. lint + tsc + build BERSIH.
+- Uji e2e (agent-browser, file ASLI user dari public/): (A1) inject tes.tif saja → panel "Gambar siap — world file belum ada" + tombol Pilih world file (screenshot uji-47-a); (A2) inject tes.tfw → panel zona langsung terpasang "tes.tif • 693×480 px • bersama tes.tfw", preselect UTM 48S, pratinjau 6,88107°LS • 106,81190°BT (= acuan pyproj sesi 46) (uji-47-b); (A3) Impor gambar → toast sukses "World file — UTM Zona 48S (WGS84) • ±0.15 m/piksel", peta terbang ke (-6.881068, 106.811898) zoom 18 (uji-47-c); (B) regresi dua file sekaligus → panel zona langsung tanpa panel tunggu; (C) regresi Task 46: palsu.tif berisi teks → toast sniffer "berisi teks biasa…" (BUKAN "Invalid byte order value.") (uji-47-d). File uji public/ dibersihkan.
+
+Stage Summary:
+- Alur impor gambar+world file kini tidak bisa buntu: pilih gambar dulu → dialog memandu memilih world file (dan sebaliknya), lalu pasangan otomatis tersusun → pilih zona (dengan pratinjau lat/lng lokasi) → impor + auto-zoom.
+- Pratinjau lokasi mencegah kesalahan zona UTM/TM-3 (penyebab raster "hilang" di lokasi salah).
+- CRS tambahan: SRGI2013 geografis 9470 + UTM SRGI2013 9476–9494 (≈ WGS84). Catatan: EPSG:9377 resmi = CRS Kolombia (Origen-Nacional) — jika data user di Indonesia dan menampilkan posisi salah, berarti CRS file salah set di QGIS; re-ekspor sebagai UTM WGS84 zona setempat.
+- Bukti: scripts/uji-47-a-gambar-dulu.png, uji-47-b-panel-zona.png, uji-47-c-peta-raster.png, uji-47-d-toast-palsu.png.
