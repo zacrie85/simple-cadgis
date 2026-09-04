@@ -510,6 +510,7 @@ function ShapeForm({
   tutup: () => void;
 }) {
   const shapes = useGis((s) => s.shapes);
+  const pendingBaru = useGis((s) => s.pendingShapeSave);
   const baru = state.id === "pending:baru";
   const sh = baru ? null : shapes.find((x) => x.id === state.id);
 
@@ -517,6 +518,9 @@ function ShapeForm({
   const [description, setDescription] = useState(sh?.description ?? "");
   const [color, setColor] = useState(sh?.color ?? WARNA[0]);
   const [labelTampil, setLabelTampil] = useState(sh?.labelTampil ?? false);
+  const [isiPct, setIsiPct] = useState(() => Math.round((sh?.isiOpasitas ?? 0.15) * 100));
+  // slider transparansi isi hanya utk bentuk BERISI (poligon/kotak/bulatan/elips) — garis/panah tak berisi
+  const bentukBerisi = baru ? pendingBaru?.kind === "closed" : sh?.kind === "closed";
 
   const simpan = () => {
     const st = useGis.getState();
@@ -526,7 +530,7 @@ function ShapeForm({
         tutup();
         return;
       }
-      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil, pending.panah ?? false);
+      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil, pending.panah ?? false, bentukBerisi ? isiPct / 100 : undefined);
       toast.success(pending.kind === "closed" ? "Poligon tersimpan" : pending.panah ? "Panah tersimpan" : "Garis tersimpan", {
         description: `${title.trim() || "Tanpa judul"} • alat gambar masih menyala — bisa langsung menggambar lagi, Esc untuk berhenti`,
       });
@@ -562,7 +566,13 @@ function ShapeForm({
         });
       }
     } else {
-      st.updateShape(state.id, { title: title.trim() || "Tanpa Judul", description: description.trim(), color, labelTampil });
+      st.updateShape(state.id, {
+        title: title.trim() || "Tanpa Judul",
+        description: description.trim(),
+        color,
+        labelTampil,
+        isiOpasitas: bentukBerisi ? isiPct / 100 : undefined,
+      });
       toast.success("Perubahan disimpan");
     }
     tutup();
@@ -601,6 +611,50 @@ function ShapeForm({
               ))}
             </div>
           </div>
+          {bentukBerisi && (
+            <div className="space-y-1.5 rounded-xl border border-slate-200 p-3">
+              <div className="flex items-center justify-between">
+                <Label>Transparansi Isi</Label>
+                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{isiPct}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={isiPct}
+                onChange={(e) => setIsiPct(Number(e.target.value))}
+                className="w-full accent-blue-600"
+                aria-label="Tingkat transparansi isi"
+              />
+              <div className="flex items-center gap-1.5">
+                {[
+                  { v: 15, l: "Bawaan" },
+                  { v: 30, l: "30%" },
+                  { v: 50, l: "50%" },
+                  { v: 75, l: "75%" },
+                  { v: 100, l: "Solid" },
+                ].map((o) => (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => setIsiPct(o.v)}
+                    className={`rounded-lg border px-2 py-1 text-[11px] font-medium transition ${isiPct === o.v ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                  >
+                    {o.l}
+                  </button>
+                ))}
+                <span
+                  className="ml-auto h-7 w-10 shrink-0 rounded-lg border border-slate-300"
+                  style={{ backgroundColor: color, opacity: Math.max(isiPct / 100, 0.05) }}
+                  title="Pratinjau kepekatan isi"
+                />
+              </div>
+              <p className="text-[11px] leading-snug text-slate-400">
+                Kepekatan warna isi poligon/kotak/bulatan/elips — 100% = warna solid penuh, 0% = garis tepi saja.
+              </p>
+            </div>
+          )}
           <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
             <input
               type="checkbox"

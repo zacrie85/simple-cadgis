@@ -64,6 +64,9 @@ export interface GisShape {
   layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
   /** Garis anak panah — mata panah digambar di ujung AKHIR garis (bentuk "open"). */
   panah?: boolean;
+  /** Transparansi ISI (0..1) poligon/kotak/bulatan/elips — 0 = garis tepi saja, 1 = warna solid penuh.
+   *  Kosong = bawaan 0.15. Tidak berlaku utk garis/panah (tak berisi). */
+  isiOpasitas?: number;
 }
 
 export interface GisLabel {

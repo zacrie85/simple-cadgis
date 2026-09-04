@@ -762,7 +762,8 @@ export function simpanShapeDariPending(
   description: string,
   color: string,
   labelTampil = false,
-  panah = false
+  panah = false,
+  isiOpasitas?: number
 ) {
   const shape: GisShape = {
     id: uid("shape"),
@@ -776,6 +777,7 @@ export function simpanShapeDariPending(
     visible: true,
     labelTampil,
     panah: panah || undefined,
+    isiOpasitas,
     layerId: useGis.getState().pastikanLayerManual(),
   };
   useGis.getState().addShape(shape);

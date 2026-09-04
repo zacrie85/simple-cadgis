@@ -900,3 +900,23 @@ Work Log:
 Stage Summary:
 - FITUR BARU: GAMBAR › Kotak — kotak/persegi 2-klik dgn pratinjau live + label ukuran Lebar×Tinggi. Di peta = poligon 4 sudut penuh fitur (edit/luas/ekspor/cetak); di Layout = anotasi rect px kertas (skala tak tersentuh, ikut PDF/PNG, persisten). Alur konsisten dgn Bulatan/Elips (jangkar berdenyut, sticky, Esc).
 - Rilis v1.8.0 (tag) MENUNGGU konfirmasi user — akan mencakup Task 39 + 40 dalam satu rilis.
+
+---
+Task ID: 41
+Agent: Super Z (main)
+Task: Task 41 — transparansi isi (fill) bisa diatur: Poligon/Kotak/Bulatan/Elips dari transparan sampai solid
+
+Work Log:
+- types.ts: GisShape + `isiOpasitas?: number` (0..1; kosong = bawaan 0.15; 1 = solid; 0 = garis tepi saja).
+- store.ts: simpanShapeDariPending + param isiOpasitas (diteruskan ke shape baru).
+- Dialog Simpan/Edit Gambar (FeatureDialogs.ShapeForm): section "Transparansi Isi" HANYA utk bentuk berisi (baru: pending.kind==="closed"; edit: sh.kind==="closed") — slider 0–100% step 5 + badge % + preset [Bawaan 15 | 30% | 50% | 75% | Solid 100] + swatch pratinjau kepekatan (warna terpilih dgn opacity live); nilai awal edit = isiOpasitas tersimpan (fallback 15); simpan → param baru / updateShape patch isiOpasitas.
+- Render: MapCanvas polygon shape `fillOpacity: sh.isiOpasitas ?? 0.15`; LayoutView peta layout idem; anotasi layout (AnotBentuk) — poligon/kotak/bulatan/elips pakai `a.isiOpasitas ?? 0.15` (menyatu dgn bawaan peta; bawaan lama 0.12/0.1 → 0.15, beda tak terlihat).
+- Chip anotasi layout: select compact "Isi 15/30/50/75%/Solid" (hanya saat alat poly-closed/bulatan/elips/kotak aktif), state opasitasAnot; simpanAnot meng-inject isiOpasitas utk jenis berisi.
+- Persistensi otomatis: simpan/muat proyek (JSON), copy-paste, anotasi localStorage — field opsional kompatibel mundur (file/anotasi lama tanpa field = bawaan).
+- SW v13 → v14. lint + tsc + build BERSIH.
+- Uji e2e browser: login → Kotak → dialog slider muncul (15) → preset Solid (slider=100) → "Kotak Solid" → peta: kotak biru PEKAT menutup peta; Bulatan preset 50% → semi-transparan (jalan samar terlihat di bawah); klik kotak → popup → ✏ Edit → slider TERBACA 100 (nilai tersimpan) → preset 30% → Simpan → kotak jadi 30% (jalan terlihat), toast "Perubahan disimpan"; Layout → chip anotasi ada combobox "Isi 15%..." → pilih "Isi Solid" → kotak anotasi MERAH SOLID di sheet, skala 1/11.380 tak berubah; shape peta (30%/50%) ikut tampil benar di layout.
+- Bukti: scripts/uji-opasitas-solid.png, uji-opasitas-50.png, uji-opasitas-edit-30.png, uji-opasitas-layout-solid.png.
+
+Stage Summary:
+- FITUR BARU: transparansi isi bisa diatur per bentuk — slider bebas 0–100% + preset cepat (Bawaan/30/50/75/Solid) di dialog Simpan & Edit Gambar; berlaku untuk Poligon, Kotak, Bulatan, Elips di PETA dan ANOTASI LAYOUT (chip anotasi punya pilihan Isi); nilai tersimpan di proyek & anotasi, ikut cetak/PDF/PNG, kompatibel mundut.
+- Rilis v1.8.0 (tag) MENUNGGU konfirmasi user — akan mencakup Task 39+40+41.

@@ -1070,7 +1070,7 @@ export default function MapCanvas() {
           color: terpilih ? "#f59e0b" : sh.color,
           weight: terpilih ? 3.5 : 2,
           fillColor: sh.color,
-          fillOpacity: 0.15,
+          fillOpacity: sh.isiOpasitas ?? 0.15,
         });
         poly.on("click", (e: L.LeafletMouseEvent) => {
           const st = useGis.getState();

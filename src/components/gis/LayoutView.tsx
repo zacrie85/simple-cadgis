@@ -103,6 +103,8 @@ interface AnotasiLayout {
   arah?: "kiri" | "kanan"; // belokan lengkung
   teks?: string; // isi anotasi teks (boleh multi-baris)
   ukuran?: number; // ukuran huruf teks (px)
+  /** Transparansi ISI (0..1) poligon/kotak/bulatan/elips — kosong = bawaan 0.15, 1 = solid. */
+  isiOpasitas?: number;
   warna: string;
 }
 
@@ -262,6 +264,7 @@ function kenaAnotasi(a: AnotasiLayout, p: { x: number; y: number }): boolean {
 /** SVG satu anotasi bentuk (teks dirender terpisah sebagai HTML). */
 function AnotBentuk({ a, terpilih }: { a: AnotasiLayout; terpilih: boolean }) {
   const warna = terpilih ? "#f59e0b" : a.warna;
+  const isi = a.isiOpasitas ?? 0.15;
   const koordinat = a.pts.map((p) => `${p.x},${p.y}`).join(" ");
   if ((a.jenis === "garis" || a.jenis === "panah") && a.pts.length >= 2) {
     const ujung = a.pts[a.pts.length - 1];
@@ -276,7 +279,7 @@ function AnotBentuk({ a, terpilih }: { a: AnotasiLayout; terpilih: boolean }) {
     );
   }
   if (a.jenis === "poligon" && a.pts.length >= 3) {
-    return <polygon points={koordinat} fill={warna} fillOpacity={0.12} stroke={warna} strokeWidth={2} strokeLinejoin="round" />;
+    return <polygon points={koordinat} fill={warna} fillOpacity={isi} stroke={warna} strokeWidth={2} strokeLinejoin="round" />;
   }
   if (a.jenis === "kotak" && a.pts[0] && a.pts[1]) {
     const p1 = a.pts[0];
@@ -288,7 +291,7 @@ function AnotBentuk({ a, terpilih }: { a: AnotasiLayout; terpilih: boolean }) {
         width={Math.max(Math.abs(p2.x - p1.x), 1)}
         height={Math.max(Math.abs(p2.y - p1.y), 1)}
         fill={warna}
-        fillOpacity={0.12}
+        fillOpacity={isi}
         stroke={warna}
         strokeWidth={2}
         strokeLinejoin="round"
@@ -296,10 +299,10 @@ function AnotBentuk({ a, terpilih }: { a: AnotasiLayout; terpilih: boolean }) {
     );
   }
   if (a.jenis === "bulatan" && a.pts[0] && a.r) {
-    return <circle cx={a.pts[0].x} cy={a.pts[0].y} r={a.r} fill={warna} fillOpacity={0.1} stroke={warna} strokeWidth={2} />;
+    return <circle cx={a.pts[0].x} cy={a.pts[0].y} r={a.r} fill={warna} fillOpacity={isi} stroke={warna} strokeWidth={2} />;
   }
   if (a.jenis === "elips" && a.pts[0] && a.rx && a.ry) {
-    return <ellipse cx={a.pts[0].x} cy={a.pts[0].y} rx={a.rx} ry={a.ry} fill={warna} fillOpacity={0.1} stroke={warna} strokeWidth={2} />;
+    return <ellipse cx={a.pts[0].x} cy={a.pts[0].y} rx={a.rx} ry={a.ry} fill={warna} fillOpacity={isi} stroke={warna} strokeWidth={2} />;
   }
   if (a.jenis === "lengkung" && a.pts.length >= 2) {
     const d = sampelLengkungPx(a.pts[0], a.pts[1], a.arah ?? "kiri")
@@ -412,6 +415,7 @@ export default function LayoutView() {
   });
   const [anotasiTampil, setAnotasiTampil] = useState(true);
   const [warnaAnot, setWarnaAnot] = useState(WARNA_ANOTASI[0]);
+  const [opasitasAnot, setOpasitasAnot] = useState(0.15);
   const [pendingAnot, setPendingAnot] = useState<{ x: number; y: number }[]>([]);
   const [kursorAnot, setKursorAnot] = useState<{ x: number; y: number } | null>(null);
   const [anotPilihId, setAnotPilihId] = useState<string | null>(null);
@@ -532,7 +536,7 @@ export default function LayoutView() {
         if (!sh.visible) continue;
         const latlngs = sh.vertices.map((v) => [v.lat, v.lng] as [number, number]);
         if (sh.kind === "closed" && latlngs.length >= 3) {
-          L.polygon(latlngs, { color: sh.color, weight: 2, fillOpacity: 0.15 }).addTo(layer);
+          L.polygon(latlngs, { color: sh.color, weight: 2, fillOpacity: sh.isiOpasitas ?? 0.15 }).addTo(layer);
         } else if (latlngs.length >= 2) {
           L.polyline(latlngs, { color: sh.color, weight: 2.5 }).addTo(layer);
           // mata panah ikut tampil di layout (bentuk hasil alat Panah)
@@ -1090,7 +1094,9 @@ export default function LayoutView() {
   };
 
   const simpanAnot = (a: Omit<AnotasiLayout, "id">) => {
-    setAnotasi((prev) => [...prev, { ...a, id: uid("anot") }]);
+    // bentuk berisi (poligon/kotak/bulatan/elips) ikut pilihan transparansi di chip anotasi
+    const isi = a.jenis === "poligon" || a.jenis === "kotak" || a.jenis === "bulatan" || a.jenis === "elips" ? opasitasAnot : undefined;
+    setAnotasi((prev) => [...prev, { ...a, isiOpasitas: isi, id: uid("anot") }]);
     if (!anotasiTampil) setAnotasiTampil(true);
   };
 
@@ -1759,6 +1765,22 @@ export default function LayoutView() {
                       ))}
                     </span>
                   </span>
+                  {/* pilihan transparansi isi — hanya utk alat bentuk berisi */}
+                  {(tool === "poly-closed" || tool === "bulatan" || tool === "elips" || tool === "kotak") && (
+                    <select
+                      value={String(Math.round(opasitasAnot * 100))}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setOpasitasAnot(Number(e.target.value) / 100)}
+                      title="Transparansi isi anotasi — 100% = warna solid penuh"
+                      className="h-7 shrink-0 cursor-pointer rounded-full border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      <option value="15">Isi 15%</option>
+                      <option value="30">Isi 30%</option>
+                      <option value="50">Isi 50%</option>
+                      <option value="75">Isi 75%</option>
+                      <option value="100">Isi Solid</option>
+                    </select>
+                  )}
                   {(tool === "poly-closed" || tool === "poly-open" || tool === "panah") && (
                     <button
                       onClick={(e) => {
