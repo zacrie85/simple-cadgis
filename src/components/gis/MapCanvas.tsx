@@ -254,6 +254,33 @@ export default function MapCanvas() {
     };
     window.addEventListener("geokita-fit-bounds", onFitBounds);
 
+    // perintah zoom ke cakupan raster (dari dialog Raster) — peta terbang ke lokasi
+    // + kotak batas raster berkedip beberapa detik agar mudah ditemukan matanya
+    const onZoomRaster = (ev: Event) => {
+      const d = (ev as CustomEvent<{ batas?: [number, number][] }>).detail;
+      if (!d?.batas || d.batas.length === 0) return;
+      const b = L.latLngBounds(d.batas);
+      map.fitBounds(b.pad(0.25));
+      const kotak = L.rectangle(b, {
+        color: "#0ea5e9",
+        weight: 3,
+        dashArray: "9 6",
+        fill: false,
+        interactive: false,
+        pane: "overlayPane",
+      }).addTo(map);
+      let kedip = 0;
+      const iv = setInterval(() => {
+        kotak.setStyle({ opacity: kedip % 2 === 0 ? 0.2 : 1 });
+        kedip++;
+      }, 380);
+      setTimeout(() => {
+        clearInterval(iv);
+        map.removeLayer(kotak);
+      }, 3420);
+    };
+    window.addEventListener("geokita-zoom-raster", onZoomRaster);
+
     const onZoom = (e: Event) => {
       const detail = (e as CustomEvent<number>).detail;
       map.zoomIn(detail);
@@ -281,6 +308,7 @@ export default function MapCanvas() {
       ro.disconnect();
       map.off("moveend zoomend", kirimView);
       window.removeEventListener("geokita-fit-bounds", onFitBounds);
+      window.removeEventListener("geokita-zoom-raster", onZoomRaster);
       window.removeEventListener("geokita-zoom", onZoom);
       window.removeEventListener("geokita-bersihkan-cache", onBersihkanCache);
       map.remove();

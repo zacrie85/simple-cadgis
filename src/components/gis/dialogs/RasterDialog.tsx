@@ -30,6 +30,7 @@ import {
   TriangleAlert,
   Download,
   Layers,
+  LocateFixed,
 } from "lucide-react";
 
 const UKURAN_MAKS = 1024 * 1024 * 1024 * 1024; // 1 TB
@@ -45,6 +46,8 @@ const KUALITAS_PIRAMIDA = [
 export default function RasterDialog() {
   const open = useGis((s) => s.dialogs.raster);
   const setDialog = useGis((s) => s.setDialog);
+  const view = useGis((s) => s.view);
+  const setView = useGis((s) => s.setView);
   const rasters = useGis((s) => s.rasters);
   const tambahRaster = useGis((s) => s.tambahRaster);
   const hapusRaster = useGis((s) => s.hapusRaster);
@@ -150,7 +153,9 @@ export default function RasterDialog() {
             : undefined,
       };
       tambahRaster(layer);
-      // zoom ke cakupan raster supaya hasil impor langsung terlihat
+      // zoom ke cakupan raster supaya hasil impor langsung terlihat —
+      // tanpa ini raster "hilang" di lokasi yang jauh dari pandangan peta
+      zoomKeRaster(layer, true);
       toast.success(
         `Raster diimpor: ${file.name} (${info.lebarPx.toLocaleString("id-ID")}×${info.tinggiPx.toLocaleString("id-ID")} px)`,
         {
@@ -176,6 +181,17 @@ export default function RasterDialog() {
   const pilihFile = (files: FileList | null) => {
     const file = files?.[0];
     if (file) void proses(file);
+  };
+
+  /** Zoom peta ke cakupan raster + kotak kedip — supaya lokasi raster langsung ketemu. */
+  const zoomKeRaster = (r: RasterLayer, otomatis = false) => {
+    if (view !== "map") setView("map"); // pastikan peta yang tampil (bukan layout)
+    window.dispatchEvent(
+      new CustomEvent("geokita-zoom-raster", {
+        detail: { batas: [[r.selatan, r.barat], [r.utara, r.timur]] as [number, number][] },
+      })
+    );
+    if (!otomatis) toast.success(`Zoom ke raster: ${r.nama}`);
   };
 
   return (
@@ -316,6 +332,13 @@ export default function RasterDialog() {
                       </p>
                     </div>
                     <button
+                      onClick={() => zoomKeRaster(r)}
+                      title="Zoom ke raster — tampilkan lokasinya di peta"
+                      className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-sky-600 hover:bg-sky-50"
+                    >
+                      <LocateFixed className="h-4 w-4" />
+                    </button>
+                    <button
                       onClick={() => {
                         hapusRaster(r.id);
                         toast.success("Raster dihapus dari peta");
@@ -393,7 +416,9 @@ export default function RasterDialog() {
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             <span>
               Raster <b>DEM</b> (1 band) otomatis dikenali — buka menu <b>Elevasi DEM</b> lalu pilih sumber{" "}
-              <b>&quot;Dari File Lokal&quot;</b> untuk mengisi elevasi tanpa internet. <b>Konverter otomatis</b> membuat
+              <b>&quot;Dari File Lokal&quot;</b> untuk mengisi elevasi tanpa internet. Setelah impor, peta otomatis
+              mengarah ke lokasi raster; untuk mencarinya lagi kapan pun, klik tombol <b>&quot;Zoom ke raster&quot;</b> (ikon
+              bidik) pada daftar di atas. <b>Konverter otomatis</b> membuat
               piramida detail (±50–200 MB) tersimpan lokal di browser: peta zoom tajam tanpa membaca ulang file asli,
               dan tahan tutup aplikasi — file sama diimpor ulang = langsung pakai cache. Layer raster sendiri tersimpan
               selama aplikasi terbuka; Simpan/Muat proyek tidak menyertakan raster.
