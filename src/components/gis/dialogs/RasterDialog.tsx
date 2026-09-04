@@ -231,6 +231,8 @@ export default function RasterDialog() {
               </p>
               <p className="mt-1 text-xs text-slate-400">
                 GeoTIFF (.tif / .tiff) — maksimal 1 TB • orthophoto/citra &amp; DEM
+                <br />
+                CRS: WGS84, UTM, Web Mercator, <b>Indonesia TM-3 DGN95</b>, 9377
               </p>
               {/* kualitas konversi otomatis (piramida) */}
               <div className="mt-3 flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-2 text-left">

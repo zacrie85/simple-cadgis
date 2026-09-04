@@ -990,3 +990,20 @@ Work Log:
 Stage Summary:
 - FITUR BARU: (1) setelah impor raster, peta LANGSUNG zoom ke lokasinya; (2) tombol "Zoom ke raster" (ikon bidik) di tiap baris daftar raster — peta terbang ke raster + kotak batas berkedip agar mudah ditemukan; bekerja juga dari mode Layout (otomatis kembali ke tampilan Peta).
 - Persiapan rilis v1.9.0 tetap MENUNGGU konfirmasi user (isi: batas 1 TB, konverter piramida otomatis, zoom ke raster).
+
+---
+Task ID: 45
+Agent: Super Z (main)
+Task: Task 45 — dukungan sistem koordinat baru di impor raster: EPSG:9377 + Indonesia TM-3 DGN95 (23830–23845) + DGN95 geografis (4755) (permintaan user: impor gagal "EPSG:9377 belum didukung")
+
+Work Log:
+- Riset identitas EPSG:9377 (epsg.io + web search): MAGNA-SIRGAS 2018 / Origen-Nacional — TM utuh negeri (lat0 4, CM -73, k 0.9992, x0 5000000, y0 2000000, GRS80). File user tersimpan dgn CRS ini; sebelumnya ditolak worker.
+- Riset TM-3 Indonesia: keluarga resmi BPN = EPSG 23830–23845 "DGN95 / Indonesia TM-3" zona 46.2–54.1; verifikasi per kode dari projjson epsg.io — SEMUA seragam: TM k=0.9999, x0=200000, y0=1500000, CM = 94.5°E + 3°×(kode−23830). DGN95 ≈ WGS84 (ellipsoid sama, geseran < 1 m).
+- raster-worker.ts (crsDariGeoKeys): tabel ZONA_TM3 + cabang 23830–23845 (proj4 tmerc dinamis, label dgn nama zona), cabang 9377, cabang GeographicTypeGeoKey=4755 → diperlakukan WGS84 dgn label "DGN95 — ≈ WGS84". Pesan error "belum didukung" kini menyebut semua CRS yang didukung. Header worker + teks drop-zone dialog menyebut daftar CRS.
+- SW v17 → v18. lint + tsc + build BERSIH.
+- Uji e2e: skrip baru scripts/buat-uji-crs.py (pyproj + tifffile; GeoKeys 3072=<epsg>) membuat 2 GeoTIFF acuan: uji-crs-9377.tif (tiepoint Bogota) & uji-crs-tm3.tif (tiepoint Jakarta). Impor 9377 → label "EPSG:9377 (MAGNA-SIRGAS 2018 / Origen-Nacional) • ±10 m/piksel", peta auto-zoom PERSIS ke (4.59321, -73.15098) = pusat acuan pyproj. Hapus → impor 23834 → label "EPSG:23834 (DGN95 / Indonesia TM-3 zona 48.2)", peta PERSIS ke (-6.10678, 106.85904), raster tampil di Tanjung Priok Jakarta Utara.
+- Bukti: scripts/uji-crs-tm3-jakarta.png (raster di Tanjung Priok), uji-crs-dialog.png; skrip acuan scripts/buat-uji-crs.py.
+
+Stage Summary:
+- Impor raster kini menerima: WGS84 (4326/4269/4755 DGN95), UTM WGS84 semua zona, Web Mercator, Indonesia TM-3 DGN95 (23830–23845 — sistem kadaster BPN), EPSG:9377. Konversi ke WGS84 otomatis via proj4 di worker (4 sudut) → overlay, piramida, sampling elevasi otomatis ikut benar.
+- Catatan utk user: EPSG:9377 adalah sistem KOLOMBIA — bila datanya di Indonesia, kemungkinan file tersimpan dgn CRS salah di QGIS; sebaiknya cek CRS sumber. Tetap bisa diimpor sekarang (tampil sesuai tag filenya).

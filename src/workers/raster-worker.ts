@@ -2,6 +2,8 @@
  * Web Worker raster SIMPLE CADGIS — impor GeoTIFF (orthophoto/citra & DEM) hingga 1 TB
  * TANPA membekukan UI: metadata → pratinjau (bertahap per blok baris / overview) →
  * gambar PNG/JPEG → sampling elevasi per titik (bilinear, lokal, tanpa internet).
+ * CRS didukung: WGS84 (4326/4269), DGN95 geografis (4755), UTM WGS84 semua zona
+ * (326xx/327xx), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), 9377.
  *
  * Prinsip anti-hang:
  *  - Semua dekode berjalan DI SINI (worker), UI utama tetap responsif.
@@ -102,7 +104,16 @@ function kirim(id: string, persen: number, tahap: string) {
   ctx.postMessage({ type: "progres", id, persen, tahap });
 }
 
-/** Definisi proj4 dari GeoKeys — dukung WGS84, Web Mercator, dan seluruh zona UTM. */
+/** Zona TM-3 DGN95 (EPSG 23830–23845, urut kode): label zona resmi BPN. */
+const ZONA_TM3 = [
+  "46.2", "47.1", "47.2", "48.1", "48.2", "49.1", "49.2", "50.1",
+  "50.2", "51.1", "51.2", "52.1", "52.2", "53.1", "53.2", "54.1",
+] as const;
+
+/**
+ * Definisi proj4 dari GeoKeys — dukung WGS84 & DGN95 geografis, Web Mercator,
+ * seluruh zona UTM WGS84, Indonesia TM-3 DGN95 (BPN/kadaster), dan 9377.
+ */
 function crsDariGeoKeys(gk: Partial<Record<string, number>>): { def: string | null; label: string } {
   const proj = gk.ProjectedCSTypeGeoKey;
   const geo = gk.GeographicTypeGeoKey;
@@ -117,17 +128,35 @@ function crsDariGeoKeys(gk: Partial<Record<string, number>>): { def: string | nu
     return { def: `+proj=utm +zone=${zona} +south +datum=WGS84 +units=m +no_defs`, label: `EPSG:${proj} (UTM Zona ${zona}S)` };
   }
   if (proj === 3857) return { def: "EPSG:3857", label: "EPSG:3857 (Web Mercator)" };
+  // Indonesia TM-3 (DGN95, EPSG 23830–23845) — sistem resmi BPN utk kadaster:
+  // TM 3°, k=0.9999, x0=200000, y0=1500000, CM 94.5°E–139.5°E (tiap kode +3°).
+  // Datum DGN95 ≈ WGS84 (ellipsoid sama, geseran < 1 m) — aman utk tampilan.
+  if (typeof proj === "number" && proj >= 23830 && proj <= 23845) {
+    const cm = 94.5 + (proj - 23830) * 3;
+    return {
+      def: `+proj=tmerc +lat_0=0 +lon_0=${cm} +k=0.9999 +x_0=200000 +y_0=1500000 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs`,
+      label: `EPSG:${proj} (DGN95 / Indonesia TM-3 zona ${ZONA_TM3[proj - 23830]})`,
+    };
+  }
+  // EPSG:9377 — MAGNA-SIRGAS 2018 / Origen-Nacional (TM utuh negeri, k=0.9992).
+  if (proj === 9377) {
+    return {
+      def: "+proj=tmerc +lat_0=4 +lon_0=-73 +k=0.9992 +x_0=5000000 +y_0=2000000 +ellps=GRS80 +units=m +no_defs",
+      label: "EPSG:9377 (MAGNA-SIRGAS 2018 / Origen-Nacional)",
+    };
+  }
   if (!proj || proj === 32767) {
+    if (geo === 4755) return { def: null, label: "EPSG:4755 (DGN95 — ≈ WGS84)" };
     if (geo && geo !== 4326 && geo !== 4269 && geo !== 32767) {
       throw new Error(
-        `Sistem koordinat EPSG:${geo} belum didukung. Simpan ulang raster sebagai GeoTIFF WGS84 (EPSG:4326) atau UTM WGS84 via QGIS: Raster → Conversion → Translate.`
+        `Sistem koordinat EPSG:${geo} belum didukung. Yang didukung: WGS84 (4326/4755), UTM WGS84 (326xx/327xx), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), dan 9377. Simpan ulang via QGIS: Raster → Conversion → Translate, pilih salah satu CRS itu.`
       );
     }
     return { def: null, label: "EPSG:4326 (WGS84)" };
   }
   if (proj) {
     throw new Error(
-      `Sistem koordinat EPSG:${proj} belum didukung. Simpan ulang raster sebagai GeoTIFF WGS84 (EPSG:4326) atau UTM WGS84 via QGIS: Raster → Conversion → Translate.`
+      `Sistem koordinat EPSG:${proj} belum didukung. Yang didukung: WGS84 (4326/4755), UTM WGS84 (326xx/327xx), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), dan 9377. Simpan ulang via QGIS: Raster → Conversion → Translate, pilih salah satu CRS itu.`
     );
   }
   return { def: null, label: "EPSG:4326 (WGS84)" };
