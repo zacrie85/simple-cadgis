@@ -956,3 +956,37 @@ Work Log:
 
 Stage Summary:
 - Batas impor raster naik 500 MB → 1 TB (ECW via ECW Bridge ikut, karena hasil konversi .tif). Arsitektur baca bertahap membuat memori tetap aman utk file besar. Persiapan rilis v1.9.0 (tag menunggu konfirmasi user).
+
+---
+Task ID: 43
+Agent: Super Z (main)
+Task: Task 43 — konverter otomatis piramida detail untuk GeoTIFF besar (dikerjakan sesi sebelumnya; sesi ini: verifikasi, pembersihan repo & perapatan commit)
+
+Work Log:
+- Fitur dikerjakan penuh di sesi sebelumnya (konteks hilang sebelum tercatat): worker membaca GeoTIFF bertahap → tile piramida ±50–200 MB di-cache IndexedDB browser (piramida-db.ts) → LapisanPiramida (piramida-layer.ts) menggantikan overlay pratinjau saat siap → impor ulang file sama = instan dari cache.
+- Verifikasi kondisi kode: RasterDialog punya pilihan KUALITAS_PIRAMIDA (Nonaktif/Ringan ±50 MB/Seimbang ±100 MB/Maksimal ±200 MB), progres konversi + tombol batal per raster, status "Piramida detail siap".
+- Kebersihan repo: commit sementara memuat 2 file uji @107 MB (public/uji-piramida.tif, scripts/uji-piramida.tif) + pesan commit UUID. Commit BELUM di-push → DI-AMEND: git rm --cached + hapus dari disk, .gitignore += scripts/*.tif & public/*.tif, pesan commit diganti deskripsi fitur yang layak (cd0b695).
+- tsconfig.json: "out" masuk exclude (artefak build out/_next/.../raster-worker*.ts bikin tsc salah lapor modul).
+- SW v15 → v16 (oleh sesi sebelumnya).
+
+Stage Summary:
+- FITUR: GeoTIFF besar dikompres OTOMATIS jadi piramida tile lokal ±50–200 MB — jawaban atas permintaan "1 TB bisa dikompres 100–200 MB dan langsung tampil". Zoom tajam tanpa membaca ulang file asli; cache bertahan antar sesi.
+- Repo tidak lagi membawa file uji raksasa; commit piramida bersih (cd0b695).
+
+---
+Task ID: 44
+Agent: Super Z (main)
+Task: Task 44 — alat "Zoom ke raster": temukan lokasi raster terimpor di peta (permintaan user: file masuk tapi tidak ketemu lokasinya)
+
+Work Log:
+- Akar masalah: komentar "zoom ke cakupan raster" di RasterDialog TANPA implementasi — setelah impor peta tidak bergerak, raster "hilang" di lokasi jauh.
+- MapCanvas.tsx: listener event baru "geokita-zoom-raster" — map.fitBounds(batas raster, pad 0.25) + L.rectangle cyan putus-putus BERKEDIP ±3,4 detik (interval 380 ms) lalu hilang sendiri; listener dibersihkan di cleanup.
+- RasterDialog.tsx: tombol baru per raster (ikon LocateFixed biru sky, title "Zoom ke raster — tampilkan lokasinya di peta") di samping tombol hapus; zoomKeRaster() memakai event tsb + memastikan view="map" dulu (bisa dipanggil dari mode Layout); ZOOM OTOMATIS sesudah impor sukses (zoomKeRaster(layer, true) — tanpa toast tambahan); kotak info menjelaskan alat ini.
+- Pola mengikuti "geokita-fit-bounds" yang sudah ada (Panel Layer) — MapCanvas selalu terpasang (GisApp), jadi event window aman.
+- SW v16 → v17. lint + tsc + build BERSIH.
+- Uji e2e: impor uji-raster.tif (DataTransfer injection) → PETA OTOMATIS terbang ke (-6.106, 106.808) = pusat raster persis, zoom 14, raster 187×140 px terlihat di layar; peta dipindah ke (2.5, 118.0) z5 → klik tombol bidik → peta KEMBALI ke raster + 1 path kedip di overlayPane; toast daftar & info OK.
+- Bukti: scripts/uji-zoom-raster-peta.png (raster di peta), uji-zoom-raster-kedip.png (kotak cyan kedip mengelilingi raster), uji-zoom-raster-dialog.png (info + tombol).
+
+Stage Summary:
+- FITUR BARU: (1) setelah impor raster, peta LANGSUNG zoom ke lokasinya; (2) tombol "Zoom ke raster" (ikon bidik) di tiap baris daftar raster — peta terbang ke raster + kotak batas berkedip agar mudah ditemukan; bekerja juga dari mode Layout (otomatis kembali ke tampilan Peta).
+- Persiapan rilis v1.9.0 tetap MENUNGGU konfirmasi user (isi: batas 1 TB, konverter piramida otomatis, zoom ke raster).
