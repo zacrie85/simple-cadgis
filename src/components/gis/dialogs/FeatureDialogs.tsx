@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useGis, simpanShapeDariPending, pastikanLayerManualSekarang } from "@/lib/gis/store";
-import { uid } from "@/lib/gis/geo";
+import { uid, fmtMeter } from "@/lib/gis/geo";
+import type { GisPoint } from "@/lib/gis/types";
 import { ambilElevasiDEM } from "@/lib/gis/elevasi";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -395,6 +396,37 @@ function ShapeForm({
       toast.success(pending.kind === "closed" ? "Poligon tersimpan" : "Garis tersimpan", {
         description: title.trim() || undefined,
       });
+      // titik pertama tarikan bulatan/elips → OTOMATIS menjadi titik koordinat berikon "Titik Awal Tarikan"
+      if (pending.titikAwal) {
+        const ta = pending.titikAwal;
+        const judul = title.trim() || (pending.kind === "closed" ? "Poligon" : "Garis");
+        const titik: GisPoint = {
+          id: uid("point"),
+          lat: ta.lat,
+          lng: ta.lng,
+          title: `Titik Awal — ${judul}`,
+          description:
+            ta.jenis === "bulatan"
+              ? `Titik awal tarikan (pusat lingkaran). Radius ${fmtMeter(ta.radius ?? 0)}.`
+              : `Titik awal tarikan (pusat elips). Jangkauan ${fmtMeter(ta.rx ?? 0)} × ${fmtMeter(ta.ry ?? 0)}.`,
+          attrs:
+            ta.jenis === "bulatan"
+              ? { keterangan: "Titik awal tarikan", radius: fmtMeter(ta.radius ?? 0) }
+              : {
+                  keterangan: "Titik awal tarikan",
+                  "radius-x": fmtMeter(ta.rx ?? 0),
+                  "radius-y": fmtMeter(ta.ry ?? 0),
+                },
+          source: "manual",
+          visible: true,
+          ikon: "titik-awal",
+          layerId: pastikanLayerManualSekarang(),
+        };
+        st.addPoint(titik);
+        toast.info("Titik awal otomatis dibuat", {
+          description: `Ikon "Titik Awal Tarikan" pada pusat ${ta.jenis} — koordinat ${ta.lat.toFixed(6)}, ${ta.lng.toFixed(6)}`,
+        });
+      }
     } else {
       st.updateShape(state.id, { title: title.trim() || "Tanpa Judul", description: description.trim(), color, labelTampil });
       toast.success("Perubahan disimpan");

@@ -8,6 +8,7 @@ import { useGis } from "@/lib/gis/store";
 import { warnaElevasi } from "@/lib/gis/contours";
 import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
 import { ikonDivIcon } from "@/lib/gis/ikon-divicon";
+import { ikonHtml } from "@/lib/gis/ikon-titik";
 import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
 
 const RENDER_CAP = 20000; // batas keras titik dirender (data lengkap tetap di memori/tabel)
@@ -457,13 +458,58 @@ export default function MapCanvas() {
     const l = layerRef.current;
     if (!map || !l) return;
 
-    const pv = L.layerGroup().addTo(l.temp); // pratinjau khusus alat ini
+    const pv = L.layerGroup().addTo(l.temp); // pratinjau bentuk (dibersihkan tiap gerak kursor)
+    const pvJangkar = L.layerGroup().addTo(l.temp); // jangkar titik awal (tahan sampai selesai)
     let awal: L.LatLng | null = null;
+    let petunjukLayer: L.Layer | null = null;
+
+    // Ikon jangkar: pin "Titik Awal Tarikan" + cincin pulse animasi di ujung pin (titik koordinat)
+    const ikonJangkar = () =>
+      L.divIcon({
+        className: "",
+        html: `<div class="cadgis-jangkar"><span class="cadgis-jangkar-pulse"></span>${ikonHtml("titik-awal", false) ?? ""}</div>`,
+        iconSize: [24, 30],
+        iconAnchor: [12, 29],
+      });
+
+    const petunjukAwal = () => {
+      if (tool === "bulatan") {
+        const rm = radiusManualRef.current;
+        return rm > 0
+          ? `Klik = pusat lingkaran R ${fmtMeter(rm)}`
+          : "Titik awal terpasang — gerakkan mouse lalu klik untuk menentukan radius";
+      }
+      if (tool === "elips") return "Titik awal terpasang — gerakkan mouse lalu klik untuk menentukan jangkauan elips";
+      return "Titik awal terpasang — gerakkan mouse lalu klik di ujung busur";
+    };
+
+    /** Pasang jangkar + petunjuk pada titik pertama (panggil sekali setelah klik pertama). */
+    const pasangJangkar = () => {
+      if (!awal) return;
+      L.marker([awal.lat, awal.lng], { icon: ikonJangkar(), interactive: false, zIndexOffset: 900 }).addTo(pvJangkar);
+      petunjukLayer = L.tooltip({ permanent: true, direction: "right", offset: [12, 0], className: "geokita-measure-label" })
+        .setLatLng(awal).setContent(petunjukAwal()).addTo(pvJangkar);
+    };
 
     const onMove = (e: L.LeafletMouseEvent) => {
       if (!awal) return;
       pv.clearLayers();
+      // begitu mulai menarik, petunjuk teks tidak perlu lagi — jangkar tetap berdenyut
+      if (petunjukLayer) {
+        pvJangkar.removeLayer(petunjukLayer);
+        petunjukLayer = null;
+      }
       const gaya = { color: "#2563eb", weight: 2, dashArray: "6 5", fillColor: "#3b82f6", fillOpacity: 0.08, interactive: false };
+      // garis bantu lurus titik awal → kursor + label ukuran di tengah garis (gaya dimensi CAD)
+      const garisTarik = (label: string) => {
+        L.polyline(
+          [[awal!.lat, awal!.lng], [e.latlng.lat, e.latlng.lng]],
+          { color: "#f59e0b", weight: 2, dashArray: "2 7", interactive: false }
+        ).addTo(pv);
+        const mid: [number, number] = [(awal!.lat + e.latlng.lat) / 2, (awal!.lng + e.latlng.lng) / 2];
+        L.tooltip({ permanent: true, direction: "center", className: "geokita-measure-label" })
+          .setLatLng(mid).setContent(label).addTo(pv);
+      };
       if (tool === "bulatan") {
         const rm = radiusManualRef.current;
         if (rm > 0) {
@@ -476,16 +522,14 @@ export default function MapCanvas() {
         }
         const r = jarakHaversine(awal, e.latlng);
         L.circle(awal, { ...gaya, radius: r }).addTo(pv);
-        L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
-          .setLatLng(e.latlng).setContent(`R ${fmtMeter(r)}`).addTo(pv);
+        garisTarik(`R ${fmtMeter(r)}`);
       } else if (tool === "elips") {
         const P = buatProyeksi(awal).xy(e.latlng);
         L.polygon(
           titikElips(awal, Math.abs(P.x), Math.abs(P.y), 48).map((v) => [v.lat, v.lng] as [number, number]),
           gaya
         ).addTo(pv);
-        L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
-          .setLatLng(e.latlng).setContent(`${fmtMeter(Math.abs(P.x))} × ${fmtMeter(Math.abs(P.y))}`).addTo(pv);
+        garisTarik(`${fmtMeter(Math.abs(P.x))} × ${fmtMeter(Math.abs(P.y))}`);
       } else {
         const arah = tool === "lengkung-kiri" ? "kiri" : "kanan";
         L.polyline(
@@ -493,17 +537,20 @@ export default function MapCanvas() {
           { color: "#2563eb", weight: 2.5, dashArray: "6 5", interactive: false }
         ).addTo(pv);
         const chord = jarakHaversine(awal, e.latlng);
-        L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
-          .setLatLng(e.latlng).setContent(`R ${fmtMeter(chord / 2)}`).addTo(pv);
+        garisTarik(`R ${fmtMeter(chord / 2)}`);
       }
     };
 
-    const simpanBentuk = (kind: "closed" | "open", vertices: LatLng[]) => {
+    const simpanBentuk = (
+      kind: "closed" | "open",
+      vertices: LatLng[],
+      titikAwal?: { lat: number; lng: number; jenis: "bulatan" | "elips"; radius?: number; rx?: number; ry?: number }
+    ) => {
       // buka dialog penamaan (alur sama dengan poligon/garis)
       useGis.setState({
         tool: null,
         pendingVertices: [],
-        pendingShapeSave: { kind, vertices },
+        pendingShapeSave: { kind, vertices, titikAwal },
         dialogs: { ...useGis.getState().dialogs, shapeInfo: { id: "pending:baru" } },
       });
     };
@@ -516,11 +563,18 @@ export default function MapCanvas() {
           toast.error("Radius manual terlalu kecil — isi minimal 0,1 meter.");
           return;
         }
-        simpanBentuk("closed", titikLingkaran(e.latlng, rm));
+        simpanBentuk("closed", titikLingkaran(e.latlng, rm), {
+          lat: e.latlng.lat,
+          lng: e.latlng.lng,
+          jenis: "bulatan",
+          radius: rm,
+        });
         return;
       }
       if (!awal) {
         awal = e.latlng;
+        // panduan instan setelah klik pertama: jangkar berdenyut + petunjuk langkah berikutnya
+        pasangJangkar();
         return;
       }
       const akhir = e.latlng;
@@ -530,14 +584,20 @@ export default function MapCanvas() {
           toast.error("Radius terlalu kecil — klik lebih jauh dari pusat.");
           return;
         }
-        simpanBentuk("closed", titikLingkaran(awal, r));
+        simpanBentuk("closed", titikLingkaran(awal, r), { lat: awal.lat, lng: awal.lng, jenis: "bulatan", radius: r });
       } else if (tool === "elips") {
         const P = buatProyeksi(awal).xy(akhir);
         if (Math.abs(P.x) < 1 && Math.abs(P.y) < 1) {
           toast.error("Elips terlalu kecil — klik lebih jauh dari pusat.");
           return;
         }
-        simpanBentuk("closed", titikElips(awal, Math.abs(P.x), Math.abs(P.y)));
+        simpanBentuk("closed", titikElips(awal, Math.abs(P.x), Math.abs(P.y)), {
+          lat: awal.lat,
+          lng: awal.lng,
+          jenis: "elips",
+          rx: Math.abs(P.x),
+          ry: Math.abs(P.y),
+        });
       } else {
         const chord = jarakHaversine(awal, akhir);
         if (chord < 1) {
@@ -559,6 +619,7 @@ export default function MapCanvas() {
       map.off("mousemove", onMove);
       window.removeEventListener("keydown", onKey);
       l.temp.removeLayer(pv);
+      l.temp.removeLayer(pvJangkar);
     };
   }, [tool]);
 
@@ -1047,6 +1108,10 @@ export default function MapCanvas() {
   useEffect(() => {
     const l = layerRef.current;
     if (!l) return;
+    // alat bentuk (bulatan/elips/lengkung) memegang l.temp lewat efek khususnya sendiri
+    // (grup pratinjau + jangkar titik awal) — clearLayers di sini akan ikut MENGHAPUS
+    // grup tersebut dari peta sehingga pratinjau/garis bantu tak pernah tampak.
+    if (tool === "bulatan" || tool === "elips" || tool === "lengkung-kiri" || tool === "lengkung-kanan") return;
     l.temp.clearLayers();
 
     if (pendingVertices.length > 0) {

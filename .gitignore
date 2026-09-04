@@ -63,3 +63,4 @@ download/*.shp
 __pycache__/
 *.pyc
 upload/
+scripts/*.png

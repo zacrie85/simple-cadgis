@@ -32,6 +32,16 @@ export const DAFTAR_IKON: IkonTitik[] = [
   { id: "pin-ungu", nama: "Pin Ungu", svg: pin("#8b5cf6", titikPutih) },
   { id: "pin-hijau", nama: "Pin Hijau", svg: pin("#10b981", titikPutih) },
   {
+    id: "titik-awal",
+    nama: "Titik Awal Tarikan",
+    svg: pin(
+      "#f59e0b",
+      `<circle cx="12" cy="11.2" r="3.3" fill="none" stroke="#fff" stroke-width="1.5"/>` +
+        `<circle cx="12" cy="11.2" r="1.2" fill="#fff"/>` +
+        `<path d="M12 6v2M12 14.4v2M6.8 11.2h2M15.2 11.2h2" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>`
+    ),
+  },
+  {
     id: "tiang",
     nama: "Tiang Tumpu",
     svg: pin(

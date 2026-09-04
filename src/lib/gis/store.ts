@@ -18,6 +18,14 @@ import { uid } from "./geo";
 export type ViewMode = "map" | "layout";
 export type Basemap = "osm" | "sat";
 
+/** Bentuk yang menunggu penamaan (dialog Simpan Gambar). */
+export interface GisStorePendingShape {
+  kind: "closed" | "open";
+  vertices: LatLng[];
+  /** Info titik awal tarikan (bulatan/elips) → otomatis dibuat titik koordinat berikon. */
+  titikAwal?: { lat: number; lng: number; jenis: "bulatan" | "elips"; radius?: number; rx?: number; ry?: number };
+}
+
 /** Preferensi performa peta (bukan bagian proyek — disimpan terpisah di localStorage). */
 export interface PerfState {
   /** Batas jumlah titik yang dirender ke peta. 999999 = semua (maks hard 20000 di MapCanvas). */
@@ -72,7 +80,7 @@ interface GisStore {
   tool: ToolMode;
   labelMode: LabelMode;
   pendingVertices: LatLng[];
-  pendingShapeSave: { kind: "closed" | "open"; vertices: LatLng[] } | null;
+  pendingShapeSave: GisStorePendingShape | null;
   measurePoints: LatLng[];
   measureTotal: number;
   points: GisPoint[];
@@ -104,7 +112,7 @@ interface GisStore {
   finishDraw: () => void;
   cancelDraw: () => void;
   clearMeasure: () => void;
-  consumePendingShape: () => { kind: "closed" | "open"; vertices: LatLng[] } | null;
+  consumePendingShape: () => GisStorePendingShape | null;
 
   addPoint: (p: GisPoint) => void;
   addPoints: (ps: GisPoint[]) => void;
