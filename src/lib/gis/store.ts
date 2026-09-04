@@ -69,6 +69,7 @@ export interface DialogState {
   raster: boolean;
   ikonTitik: boolean; // ganti ikon penanda massal utk titik terpilih (hasil Blok)
   konversi: boolean; // menu konversi koordinat (CRS universal)
+  password: boolean; // setelan password gerbang (ganti password / kunci aplikasi)
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -206,6 +207,7 @@ const DIALOG_AWAL: DialogState = {
   raster: false,
   ikonTitik: false,
   konversi: false,
+  password: false,
   point: null,
   text: null,
   shapeInfo: null,

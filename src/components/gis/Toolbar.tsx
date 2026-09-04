@@ -44,6 +44,7 @@ import {
   Copy,
   ClipboardPaste,
   ArrowRightLeft,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -127,7 +128,7 @@ export default function Toolbar() {
         { label: "Ekspor", icon: Download, title: "Ekspor ke KMZ / Excel / SHP", onClick: () => s.setDialog("export", true) },
         { label: "Simpan", icon: Save, title: "Simpan proyek ke file .cadgis.json (semua data + layer)", onClick: () => s.setDialog("simpan", true), active: s.dialogs.simpan },
         { label: "Muat", icon: FolderOpen, title: "Muat proyek dari file .cadgis.json (ganti semua / gabungkan)", onClick: () => s.setDialog("muat", true), active: s.dialogs.muat },
-        { label: "Layer", icon: Layers, title: "Panel layer — tampil/sembunyikan per layer, ganti nama, zoom, hapus", onClick: () => s.setDialog("layer", true), active: s.dialogs.layer },
+        { label: "Layer", icon: Layers, title: "Panel layer — tampil/sembunyikan per layer, ganti nama, zoom, hapus. Panel bisa digeser (header) & di-resize (pojok)", onClick: () => s.setDialog("layer", !s.dialogs.layer), active: s.dialogs.layer },
         {
           label: "Bersihkan",
           icon: Trash2,
@@ -311,6 +312,19 @@ export default function Toolbar() {
       items: [
         { label: "Demo", icon: Sparkles, title: "Muat data contoh (titik elevasi + poligon)", onClick: muatContoh },
         { label: "Excel", icon: FileSpreadsheet, title: "Contoh alur impor Excel", onClick: () => s.setDialog("import", true) },
+      ],
+    },
+    {
+      nama: "Setelan",
+      items: [
+        {
+          label: "Password",
+          icon: KeyRound,
+          title:
+            "Password gerbang — ganti password pembuka aplikasi (bawaan: A$rama33) atau kunci aplikasi sekarang",
+          onClick: () => s.setDialog("password", true),
+          active: s.dialogs.password,
+        },
       ],
     },
   ];

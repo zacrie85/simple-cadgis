@@ -16,6 +16,8 @@ import RasterDialog from "./dialogs/RasterDialog";
 import KonversiDialog from "./dialogs/KonversiDialog";
 import View3D from "./dialogs/View3D";
 import LayerPanel from "./dialogs/LayerPanel";
+import PasswordDialog from "./dialogs/PasswordDialog";
+import PasswordGate from "./PasswordGate";
 import {
   SimpanProyekDialog,
   MuatProyekDialog,
@@ -87,9 +89,10 @@ export default function GisApp() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
-      <Toolbar />
-      <div className="relative flex-1 min-h-0">
+    <PasswordGate>
+      <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
+        <Toolbar />
+        <div className="relative flex-1 min-h-0">
         <MapCanvas />
         <LayoutView />
         <DrawChip />
@@ -110,11 +113,13 @@ export default function GisApp() {
         <KonversiDialog />
         <View3D />
         <LayerPanel />
+        <PasswordDialog />
         <SimpanProyekDialog />
         <MuatProyekDialog />
         <BersihkanDialog />
         <SesiPulihkanDialog />
       </div>
     </div>
+    </PasswordGate>
   );
 }

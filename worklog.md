@@ -779,3 +779,24 @@ Work Log:
 Stage Summary:
 - FITUR BARU LIVE: (A) Blok Poligon — gambar poligon bebas untuk memblok semua data di dalamnya (Shift = tambah, 3 cara menutup, alat tetap aktif); (B) semua alat GAMBAR sticky — menggambar terus-menerus tanpa pilih ulang, nonaktif via Esc atau klik tombol alat lagi; plus perbaikan klik-fitur-saat-menggambar dan Esc-vs-dialog.
 - Rilis v1.5.0 berisi gabungan Task 31 (grid DMS vertikal, GPX/DXF/DWG, copy-paste, radius manual) + Task 32 (konversi koordinat universal) + Task 33 (panduan gambar bulatan/elips) + Task 34 (blok poligon + sticky gambar).
+
+---
+Task ID: 36
+Agent: Super Z (main)
+Task: Task 36 — (1) Panel Layer bisa digeser & di-resize manual; (2) Password Gate aplikasi (default A$rama33, bisa diubah via pengaturan dalam aplikasi)
+
+Work Log:
+- Eksplorasi: LayerPanel.tsx sebelumnya modal shadcn Dialog statis; GisApp memuat semua dialog; Toolbar ribbon 10 grup; store DialogState typed; SW v9; versi 1.5.0.
+- gate.ts BARU (src/lib/gis/gate.ts): SHA-256 murni JS sinkron (verifikasi bun vs node:crypto — 6 kasus termasuk UTF-8/emoji SEMUA COCOK; hash A$rama33 = 9e4d04e1...); penyimpanan hash di localStorage "cadgis_gate_hash", status buka per sesi di sessionStorage "cadgis_gate_ok"; API: hashPassword/verifyPassword/getGateHash/simpanPasswordBaru/apakahTerbuka/bukaGerbang/kunciGerbang; password default dihitung runtime (tidak ada hash/teks yang mengunci).
+- PasswordGate.tsx BARU: layar kunci full-screen (gradient biru, kartu putih, ikon gembok, toggle lihat password, Enter = Masuk, error merah + animasi goyang 550ms); status sesi via useSyncExternalStore (server & pass hidrasi = "awal" → layar kosong slate-50, tanpa hydration mismatch, tanpa setState-in-effect).
+- PasswordDialog.tsx BARU: ganti password (validasi: lama cocok, baru ≥4 karakter, konfirmasi sama) + tombol "Kunci Sekarang" (kunciGerbang + reload) + catatan lupa-password (hapus Site data → kembali default).
+- LayerPanel.tsx DIROMBAK: keluar dari shadcn Dialog → panel mengambang position:fixed z-[1200] non-modal (peta tetap bisa dipakai saat panel terbuka); drag pointer events dari header (grip + judul; tombol header dikecualikan); resize dari tepi kanan (e), tepi bawah (s), pojok kanan-bawah (se, ikon svg diagonal); clamp: x∈[-(w-90), vw-90], y∈[0, vh-48], MIN 320×240, maks layar; posisi+ukuran persisten localStorage "cadgis_layerpanel_rect" (tersimpan saat pointerup & saat window resize di-clamp); tombol RotateCcw reset ke default; init lazy useState(() => typeof window==="undefined"?null:bacaRect()) — aman SSR karena open=false saat render pertama; list layer/kontur/rename/hapus/zoom tidak berubah.
+- store.ts: DialogState + DIALOG_AWAL tambah "password: boolean". GisApp.tsx: dibungkus <PasswordGate> (peta & toolbar baru termuat setelah unlock), <PasswordDialog /> dimount. Toolbar.tsx: grup BARU "Setelan" (tombol Password, ikon KeyRound); tombol Layer jadi TOGGLE (setDialog("layer", !dialogs.layer)).
+- lint error react-hooks/set-state-in-effect (2) diperbaiki via useSyncExternalStore + lazy init (tanpa setState di body effect). tsc + lint + build BERSIH.
+- sw.js v9 → v10; package.json 1.5.0 → 1.6.0.
+- Uji e2e browser (dev): layar kunci tampil; password salah → border merah + "Password salah. Coba lagi."; A$rama33 → masuk; panel Layer default (1028,64,400×560); drag header (1150,76)→(600,320) → panel (478,308) tepat; resize pojok → 538×582; RELOAD → sessionStorage "1" (tidak diminta password ulang) + rect tersimpan, dibuka lagi persis di posisi lama; toggle tombol Layer tutup/buka; reset posisi kembali default; dialog password: simpan dgn lama salah → toast "Password saat ini salah"; ganti ke Kunci#2026 → hash localStorage = sha256("Kunci#2026") (dicek node:crypto); Kunci Sekarang → reload ke layar kunci; A$rama33 DITOLAK, Kunci#2026 DITERIMA; restore ke A$rama33 → hash cocok lagi; console hanya warning aria-describedby pre-existing, 0 error.
+- Bukti: download/uji35-gate.png, uji35-salah.png, uji35-masuk.png, uji35-layer1.png, uji35-layer2.png, uji35-pwd-dlg.png, uji35-pwd-error.png, uji35-terkunci.png; skrip scripts/test-sha256.ts.
+
+Stage Summary:
+- FITUR BARU: (1) Panel Layer mengambang — digeser dari header, di-resize dari tepi/pojok kanan-bawah, posisi & ukuran DIINGAT (localStorage), tombol Layer di ribbon kini toggle + tombol reset posisi; panel non-modal sehingga peta tetap operasional. (2) Password Gate — default A$rama33 (SHA-256 lokal, tak ada plaintext), layar kunci tiap sesi/tab baru (refresh di sesi sama tidak ditanya ulang), grup ribbon baru SETELAN › Password untuk mengganti password + tombol Kunci Sekarang; lupa password = hapus Site data (kembali default).
+- Rilis v1.6.0 (tag) MENUNGGU konfirmasi user setelah uji di Pages.

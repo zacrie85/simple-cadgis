@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGis } from "@/lib/gis/store";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -17,10 +16,65 @@ import {
   X,
   Mountain,
   HelpCircle,
+  RotateCcw,
+  GripVertical,
 } from "lucide-react";
 import type { GisLayer } from "@/lib/gis/types";
 
-/** Panel layer: daftar semua layer data dengan tombol tampil/sembunyi, rename, zoom, hapus.
+/** Posisi & ukuran panel disimpan di localStorage — dibuka lagi, tetap di tempat yang sama. */
+const KUNCI_RECT = "cadgis_layerpanel_rect";
+const MIN_W = 320;
+const MIN_H = 240;
+
+type Rect = { x: number; y: number; w: number; h: number };
+type ModeGeser = "move" | "e" | "s" | "se"; // header geser posisi; tepi kanan/bawah/pojok untuk resize
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+/** Posisi default: melayang di sisi kanan, di bawah toolbar. */
+function rectDefault(): Rect {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = clamp(Math.min(400, vw - 24), MIN_W, vw);
+  const h = clamp(Math.min(560, vh - 140), MIN_H, vh);
+  return { x: Math.max(8, vw - w - 12), y: 64, w, h };
+}
+
+function bacaRect(): Rect {
+  try {
+    const raw = localStorage.getItem(KUNCI_RECT);
+    if (raw) {
+      const r = JSON.parse(raw) as Rect;
+      if ([r.x, r.y, r.w, r.h].every((n) => typeof n === "number" && isFinite(n))) {
+        // clamp ke ukuran layar saat ini (layar bisa berubah sejak disimpan)
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const w = clamp(r.w, MIN_W, vw);
+        const h = clamp(r.h, MIN_H, vh);
+        return {
+          w,
+          h,
+          x: clamp(r.x, -(w - 90), vw - 90), // minimal 90px panel masih terlihat
+          y: clamp(r.y, 0, vh - 48), // header tidak boleh hilang dari layar
+        };
+      }
+    }
+  } catch {
+    /* rusak / tak ada — pakai default */
+  }
+  return rectDefault();
+}
+
+function simpanRect(r: Rect) {
+  try {
+    localStorage.setItem(KUNCI_RECT, JSON.stringify(r));
+  } catch {
+    /* diamkan */
+  }
+}
+
+/** Panel layer mengambang: bisa DIGESER (header) & DI-RESIZE (tepi kanan/bawah/pojok).
+ *  Daftar semua layer data dengan tombol tampil/sembunyi, rename, zoom, hapus.
  *  Layer kontur (hasil analisis) juga ditampilkan karena punya visibilitas sendiri. */
 export default function LayerPanel() {
   const open = useGis((s) => s.dialogs.layer);
@@ -42,9 +96,86 @@ export default function LayerPanel() {
   const [namaEdit, setNamaEdit] = useState("");
   const [hapusId, setHapusId] = useState<string | null>(null);
 
-  if (!open) return null;
+  // rect dihitung lazy: null hanya saat SSR (window tak ada) — di client langsung terisi.
+  // Karena panel tertutup saat render pertama (open=false), output render SSR & client tetap sama.
+  const [rect, setRect] = useState<Rect | null>(() => (typeof window === "undefined" ? null : bacaRect()));
+  const rectRef = useRef<Rect | null>(null);
+
+  // layar berubah ukuran → jaga panel tetap terlihat
+  useEffect(() => {
+    const onResize = () => {
+      setRect((r) => {
+        if (!r) return r;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const nr: Rect = { ...r, w: clamp(r.w, MIN_W, vw), h: clamp(r.h, MIN_H, vh) };
+        nr.x = clamp(nr.x, -(nr.w - 90), vw - 90);
+        nr.y = clamp(nr.y, 0, vh - 48);
+        rectRef.current = nr;
+        simpanRect(nr);
+        return nr;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  /** Mulai geser posisi (mode "move") atau resize ("e"/"s"/"se") — pointer event, mouse & sentuh. */
+  const mulaiGeser = (mode: ModeGeser) => (e: React.PointerEvent) => {
+    if (mode === "move" && (e.target as HTMLElement).closest("button")) return; // tombol header tak memicu geser
+    e.preventDefault();
+    e.stopPropagation();
+    const orig = rectRef.current ?? rect ?? bacaRect();
+    const sx = e.clientX;
+    const sy = e.clientY;
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - sx;
+      const dy = ev.clientY - sy;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      setRect(() => {
+        let nr: Rect;
+        if (mode === "move") {
+          nr = {
+            w: orig.w,
+            h: orig.h,
+            x: clamp(orig.x + dx, -(orig.w - 90), vw - 90),
+            y: clamp(orig.y + dy, 0, vh - 48),
+          };
+        } else {
+          nr = {
+            ...orig,
+            w: mode === "s" ? orig.w : clamp(orig.w + dx, MIN_W, vw - orig.x),
+            h: mode === "e" ? orig.h : clamp(orig.h + dy, MIN_H, vh - orig.y),
+          };
+        }
+        rectRef.current = nr;
+        return nr;
+      });
+    };
+    const onUp = () => {
+      simpanRect(rectRef.current ?? orig);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
+  if (!open || !rect) return null;
 
   const tutup = () => setDialog("layer", false);
+
+  const resetPosisi = () => {
+    const r = rectDefault();
+    rectRef.current = r;
+    setRect(r);
+    simpanRect(r);
+    toast.success("Posisi & ukuran panel dikembalikan ke default");
+  };
 
   const hitung = (id: string) => ({
     titik: points.filter((p) => p.layerId === id).length,
@@ -75,19 +206,48 @@ export default function LayerPanel() {
     if (mode === "isi") {
       toast.success(`Layer dihapus beserta isinya`, { description: `${l.nama}: ${h.titik} titik + ${h.bentuk} bentuk dihapus.` });
     } else {
-      toast.success(`Layer dihapus — isi dilepas ke "Tanpa Layer"`, { description: `${l.nama}: ${h.titik} titik + ${h.bentuk} bentuk tetap ada & tampak.` });
+      toast.success(`Layer dihapus — isi dilepas ke "Tanpa Layer"`, { description: `${l.nama}: ${h.titik} titik + ${h.bentuk} tetap ada & tampak.` });
     }
   };
 
   return (
-    <Dialog open onOpenChange={(v) => !v && tutup()}>
-      <DialogContent className="rounded-2xl sm:max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-blue-700" /> Panel Layer
-          </DialogTitle>
-        </DialogHeader>
+    <div
+      role="dialog"
+      aria-label="Panel Layer"
+      className="fixed z-[1200] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
+    >
+      {/* ===== header = pegangan untuk menggeser posisi panel ===== */}
+      <div
+        onPointerDown={mulaiGeser("move")}
+        className="flex items-center gap-2 pl-2 pr-1.5 h-12 shrink-0 border-b border-slate-200 bg-slate-50/90 select-none touch-none cursor-move"
+      >
+        <GripVertical className="h-4 w-4 text-slate-300 shrink-0" />
+        <Layers className="h-5 w-5 text-blue-700 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-800 leading-none">Panel Layer</p>
+          <p className="text-[10px] text-slate-400 leading-none mt-0.5">
+            geser dari header • resize dari tepi/pojok kanan-bawah
+          </p>
+        </div>
+        <button
+          onClick={resetPosisi}
+          title="Kembalikan posisi & ukuran panel ke default"
+          className="shrink-0 h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+        >
+          <RotateCcw className="h-4 w-4" />
+        </button>
+        <button
+          onClick={tutup}
+          title="Tutup panel"
+          className="shrink-0 h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+        >
+          <X className="h-4.5 w-4.5" />
+        </button>
+      </div>
 
+      {/* ===== isi panel ===== */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <p className="text-xs text-slate-500 -mt-1">
           Klik ikon mata untuk <b>menampilkan / menyembunyikan</b> layer. Layer otomatis dibuat saat impor data & gambar manual.
         </p>
@@ -222,7 +382,16 @@ export default function LayerPanel() {
           <Mountain className="h-3 w-3" />
           {labels.length > 0 ? `${labels.length.toLocaleString("id-ID")} label teks ikut mengikuti layer masing-masing.` : "Kontrol visibilitas juga berlaku di tabel data."}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+
+      {/* ===== pegangan resize: tepi kanan, tepi bawah, pojok kanan-bawah ===== */}
+      <div onPointerDown={mulaiGeser("e")} className="absolute top-12 right-0 h-[calc(100%-4.75rem)] w-1.5 cursor-ew-resize touch-none" />
+      <div onPointerDown={mulaiGeser("s")} className="absolute bottom-0 left-0 w-[calc(100%-1.5rem)] h-1.5 cursor-ns-resize touch-none" />
+      <div onPointerDown={mulaiGeser("se")} title="Tarik untuk mengubah ukuran" className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize touch-none flex items-end justify-end p-0.5">
+        <svg width="10" height="10" viewBox="0 0 10 10" className="text-slate-300 hover:text-slate-500">
+          <path d="M9 1 1 9 M9 5 5 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+        </svg>
+      </div>
+    </div>
   );
 }
