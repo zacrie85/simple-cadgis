@@ -1050,3 +1050,21 @@ Stage Summary:
 - Pratinjau lokasi mencegah kesalahan zona UTM/TM-3 (penyebab raster "hilang" di lokasi salah).
 - CRS tambahan: SRGI2013 geografis 9470 + UTM SRGI2013 9476–9494 (≈ WGS84). Catatan: EPSG:9377 resmi = CRS Kolombia (Origen-Nacional) — jika data user di Indonesia dan menampilkan posisi salah, berarti CRS file salah set di QGIS; re-ekspor sebagai UTM WGS84 zona setempat.
 - Bukti: scripts/uji-47-a-gambar-dulu.png, uji-47-b-panel-zona.png, uji-47-c-peta-raster.png, uji-47-d-toast-palsu.png.
+
+---
+Task ID: 48
+Agent: Super Z (main)
+Task: Task 48 — laporan user "gambar georeferensi berhasil masuk, tapi saat pindah ke menu Layout gambarnya tidak tampil (yang tampil hanya peta OSM/satelit)" → render raster georeferensi di peta Layout
+
+Work Log:
+- Akar masalah: LayoutView membuat peta Leaflet TERPISAH (window.__layoutMap) yang hanya merender tile basemap + lapisan vektor (titik/poligon/garis/label/kontur). Raster (imageOverlay hasil impor gambar+world file / GeoTIFF / piramida) hanya pernah dipasang di MapCanvas — peta layout tidak tahu apa-apa tentang store rasters.
+- LayoutView.tsx: import ambilMetaPiramida + buatLapisanPiramida; baca rasters dari store; lapisan state += { raster: true }; pane "raster-pane" (zIndex 350, pointer-events none, sama dgn peta utama) dibuat saat init peta layout; efek baru merender raster = cermin logika MapCanvas (hapus yang non-aktif, setOpacity, tukar pratinjau → tile piramida saat piramidaSiap via meta IndexedDB, selain itu L.imageOverlay blob pratinjau); deps [rasters, lapisan.raster, view, mapDiv] agar ikut dibuat ulang saat peta layout dibikin ulang.
+- Pas otomatis: bounds raster (2 sudut) kini ikut dihitung di fitBounds auto (render lapisan data) & efek orientasi/grid — layout tak lagi mendarat di Semarang saat data hanya raster.
+- UI panel: checkbox "Raster georeferensi (n)" di "Data yang ditampilkan"; legenda otomatis dapat entri "Raster — <nama>" (simbol kotak sky) per raster terlihat; keduanya ikut tercetak PDF/PNG (html2canvas-pro merender img blob & legenda DOM).
+- SW v20 → v21. lint + tsc + build BERSIH.
+- Uji e2e (agent-browser, file ASLI user upload/tes.tif + tes.tfw): impor → peta utama terbang ke (-6.881068, 106.811898) zoom 18, toast "World file — UTM Zona 48S (WGS84) • ±0.15 m/piksel"; klik Layout → raster-pane layout berisi 1 img blob 757×529 px, peta layout PERSIS di pusat raster (-6.8810677, 106.8118978) zoom 20.13, orthophoto tampil di sheet A4 + legenda "Raster — tes.tif" (uji-48-layout-bersih.png); toggle OFF → 0 img, ON → 1 img; Simpan PNG → peta-kerja-geokita.png 2,5 MB berisi judul/skala 1:513/orthophoto/legenda/utara/skala bar (uji-48-ekspor-png.png); regresi balik ke Peta → raster tetap 1 di peta utama, __layoutMap dihapus bersih. File uji public/ dibersihkan.
+
+Stage Summary:
+- Raster georeferensi (gambar+world file, GeoTIFF pratinjau, maupun tile piramida) kini TAMPIL di menu Layout — di atas basemap, di bawah vektor — dengan toggle panel, entri legenda, ikut Pas otomatis, dan ikut terekspor PDF/PNG.
+- Skala cetak otomatis kini memperhitungkan cakupan raster (mis. ortho ±103×71 m → skala 1:513 pada A4 lanskap).
+- Catatan: piramida besar di layout memakai tile IndexedDB yang sama dgn peta utama; bila piramida gagal/terhapus, pratinjau ≤2048 px yang dipakai (sama seperti peta utama).

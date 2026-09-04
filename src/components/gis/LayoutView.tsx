@@ -9,6 +9,8 @@ import { gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
 import { segitigaPanahPx, htmlPanah, sudutPeta } from "@/lib/gis/panah";
 import { uid } from "@/lib/gis/geo";
 import { GAYA_UTARA, type GayaUtaraId } from "./NorthArrows";
+import { ambilMetaPiramida } from "@/lib/gis/piramida-db";
+import { buatLapisanPiramida } from "@/lib/gis/piramida-layer";
 import { Printer, Move, RotateCcw, ImagePlus, X, FileDown, ImageDown, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -348,6 +350,7 @@ export default function LayoutView() {
   const shapes = useGis((s) => s.shapes);
   const labels = useGis((s) => s.labels);
   const contours = useGis((s) => s.contours);
+  const rasters = useGis((s) => s.rasters);
   const basemap = useGis((s) => s.basemap);
   const view = useGis((s) => s.view);
   const tool = useGis((s) => s.tool);
@@ -355,7 +358,7 @@ export default function LayoutView() {
   const [judul, setJudul] = useState("PETA KERJA GEOKITA");
   const [subJudul, setSubJudul] = useState("Skala • Tanggal: " + new Date().toLocaleDateString("id-ID"));
   const [orientasi, setOrientasi] = useState<Orientasi>("lanskap");
-  const [lapisan, setLapisan] = useState({ titik: true, bentuk: true, label: true, kontur: true });
+  const [lapisan, setLapisan] = useState({ titik: true, bentuk: true, label: true, kontur: true, raster: true });
   const [basemapLayout, setBasemapLayout] = useState<"osm" | "sat" | "kosong">(basemap);
   const [mapDiv, setMapDiv] = useState<HTMLDivElement | null>(null);
   const [modeSkala, setModeSkala] = useState<"auto" | "manual">("auto");
@@ -385,6 +388,9 @@ export default function LayoutView() {
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  // raster georeferensi di peta layout — jejak lapisan per id (pratinjau / tile piramida)
+  const rasterRef = useRef<Map<string, { layer: L.ImageOverlay | L.GridLayer; grid: boolean }>>(new Map());
+  const piramidaPasangRef = useRef<Set<string>>(new Set());
   const modeSkalaRef = useRef<"auto" | "manual">("auto");
   const lastAppliedRef = useRef<number | null>(null);
   const pernahKetikRef = useRef(false);
@@ -473,6 +479,12 @@ export default function LayoutView() {
     map.on("move zoom viewreset resize", gridEv);
     mapRef.current = map;
     layerRef.current = L.layerGroup().addTo(map);
+    // pane raster georeferensi (sama dgn peta utama): di atas tile basemap (200),
+    // di bawah fitur vektor (overlayPane 400) — dan tak menghalangi klik
+    map.createPane("raster-pane");
+    const paneRaster = map.getPane("raster-pane")!;
+    paneRaster.style.zIndex = "350";
+    paneRaster.style.pointerEvents = "none";
     (window as unknown as Record<string, unknown>).__layoutMap = map;
     setTimeout(() => {
       map.invalidateSize();
@@ -504,6 +516,66 @@ export default function LayoutView() {
       tile.bringToBack();
     }
   }, [basemapLayout, view, mapDiv]);
+
+  // ---------- raster georeferensi (gambar+world file / GeoTIFF / tile piramida) ----------
+  useEffect(() => {
+    const map = mapRef.current;
+    if (view !== "layout" || !mapDiv || !map) return;
+    const daftar = rasterRef.current;
+    const pasang = piramidaPasangRef.current;
+    const aktif = lapisan.raster ? rasters.filter((r) => r.terlihat) : [];
+    const idAktif = new Set(aktif.map((r) => r.id));
+    // hapus lapisan raster yang sudah tidak aktif (dihapus / disembunyikan / toggle mati)
+    for (const [id, ent] of daftar) {
+      if (!idAktif.has(id)) {
+        map.removeLayer(ent.layer);
+        daftar.delete(id);
+      }
+    }
+    for (const r of aktif) {
+      const ent = daftar.get(r.id);
+      const opas = r.opasitas;
+      const mauGrid = !!(r.piramidaId && r.piramidaSiap);
+      if (ent) {
+        ent.layer.setOpacity(opas);
+        if (ent.grid === mauGrid) continue;
+      }
+      if (mauGrid && !pasang.has(r.id)) {
+        // tukar overlay pratinjau → lapisan tile piramida (async ambil meta dari IndexedDB)
+        pasang.add(r.id);
+        const pid = r.piramidaId!;
+        void (async () => {
+          try {
+            const meta = await ambilMetaPiramida(pid);
+            if (!meta?.siap || !meta.level.length) return;
+            const gl = buatLapisanPiramida({
+              meta,
+              bounds: L.latLngBounds([r.selatan, r.barat], [r.utara, r.timur]),
+              opasitas: r.opasitas,
+            });
+            gl.addTo(map);
+            const lama = daftar.get(r.id);
+            if (lama) map.removeLayer(lama.layer);
+            daftar.set(r.id, { layer: gl, grid: true });
+          } catch {
+            /* meta hilang → overlay pratinjau tetap dipakai */
+          } finally {
+            pasang.delete(r.id);
+          }
+        })();
+      } else if (!ent || !mauGrid) {
+        const ov = L.imageOverlay(r.gambarUrl, L.latLngBounds([r.selatan, r.barat], [r.utara, r.timur]), {
+          opacity: opas,
+          pane: "raster-pane",
+          interactive: false,
+          className: "geokita-raster",
+        });
+        ov.addTo(map);
+        if (ent) map.removeLayer(ent.layer);
+        daftar.set(r.id, { layer: ov, grid: false });
+      }
+    }
+  }, [rasters, lapisan.raster, view, mapDiv]);
 
   // ---------- render lapisan data ----------
   useEffect(() => {
@@ -590,10 +662,15 @@ export default function LayoutView() {
     const semua: [number, number][] = [
       ...points.map((p) => [p.lat, p.lng] as [number, number]),
       ...shapes.flatMap((s) => s.vertices.map((v) => [v.lat, v.lng] as [number, number])),
+      // raster ikut dihitung agar Pas otomatis tidak melewatkan gambar georeferensi
+      ...(lapisan.raster ? rasters.filter((r) => r.terlihat) : []).flatMap((r) => [
+        [r.selatan, r.barat],
+        [r.utara, r.timur],
+      ] as [number, number][]),
     ];
     if (semua.length > 0 && modeSkalaRef.current === "auto") map.fitBounds(L.latLngBounds(semua).pad(0.1));
     setTimeout(() => map.invalidateSize(), 80);
-  }, [points, shapes, labels, contours, lapisan, view, mapDiv]);
+  }, [points, shapes, labels, contours, rasters, lapisan, view, mapDiv]);
 
   // ---------- terapkan skala cetak (1:n) ----------
   const terapkanSkala = (s: number) => {
@@ -648,6 +725,10 @@ export default function LayoutView() {
         const semua: [number, number][] = [
           ...st.points.map((p) => [p.lat, p.lng] as [number, number]),
           ...st.shapes.flatMap((x) => x.vertices.map((v) => [v.lat, v.lng] as [number, number])),
+          ...(lapisan.raster ? st.rasters.filter((r) => r.terlihat) : []).flatMap((r) => [
+            [r.selatan, r.barat],
+            [r.utara, r.timur],
+          ] as [number, number][]),
         ];
         if (semua.length > 0) map.fitBounds(L.latLngBounds(semua).pad(0.1));
       }
@@ -770,6 +851,13 @@ export default function LayoutView() {
       ? { jenis: "label", warna: "#334155", label: `Label (${labels.length.toLocaleString("id-ID")})` }
       : null,
   ].filter(Boolean) as LegendaItem[];
+  // raster georeferensi ikut dilabeli di legenda — satu entri per raster yang terlihat
+  if (lapisan.raster) {
+    for (const r of rasters) {
+      if (!r.terlihat) continue;
+      legendaItems.push({ jenis: "kotak", warna: "#0ea5e9", label: `Raster — ${r.nama}` });
+    }
+  }
   // tulisan buatan user digabung di akhir daftar legenda
   const semuaLegenda: LegendaItem[] = [
     ...legendaItems,
@@ -2452,6 +2540,7 @@ export default function LayoutView() {
                       ["bentuk", `Poligon & Garis (${shapes.length.toLocaleString("id-ID")})`],
                       ["label", `Label teks (${labels.length.toLocaleString("id-ID")})`],
                       ["kontur", `Kontur (${contours.length.toLocaleString("id-ID")})`],
+                      ["raster", `Raster georeferensi (${rasters.length.toLocaleString("id-ID")})`],
                     ] as const
                   ).map(([k, label]) => (
                     <label key={k} className="flex items-center gap-2 text-xs cursor-pointer">
