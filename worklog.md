@@ -800,3 +800,20 @@ Work Log:
 Stage Summary:
 - FITUR BARU: (1) Panel Layer mengambang — digeser dari header, di-resize dari tepi/pojok kanan-bawah, posisi & ukuran DIINGAT (localStorage), tombol Layer di ribbon kini toggle + tombol reset posisi; panel non-modal sehingga peta tetap operasional. (2) Password Gate — default A$rama33 (SHA-256 lokal, tak ada plaintext), layar kunci tiap sesi/tab baru (refresh di sesi sama tidak ditanya ulang), grup ribbon baru SETELAN › Password untuk mengganti password + tombol Kunci Sekarang; lupa password = hapus Site data (kembali default).
 - Rilis v1.6.0 (tag) MENUNGGU konfirmasi user setelah uji di Pages.
+
+---
+Task ID: 37
+Agent: Super Z (main)
+Task: Rilis v1.6.0 (konfirmasi user: "berhasil" — panel Layer drag/resize + password gate terverifikasi di Pages)
+
+Work Log:
+- Cek pra-rilis: working tree bersih, package.json 1.6.0, HEAD bc58c9e (sudah di origin/main), tag terakhir v1.5.0.
+- Tag anotasi v1.6.0 dibuat & push main + tag via URL (token user, output di-redact sed ghp_[REDACTED]).
+- CI: "Deploy ke GitHub Pages" (main) → success; "Build Installer Desktop (Windows)" (tag v1.6.0) → in_progress ±7 menit → success.
+- Verifikasi release via API: "SIMPLE CADGIS v1.6.0", draft=false, prerelease=false, aset SIMPLE-CADGIS-Setup-1.6.0.exe 197.685.581 byte; HEAD unduhan → HTTP 302→200 dengan content-length cocok (exe dapat diunduh).
+- sw.js live di Pages = simplecadgis-v10.
+
+Stage Summary:
+- RILIS v1.6.0 SELESAI & TERVERIFIKASI: Pages live (SW v10) + installer SIMPLE-CADGIS-Setup-1.6.0.exe (~189 MB) dapat diunduh di GitHub Releases.
+- Isi rilis: Panel Layer mengambang (drag header, resize tepi/pojok, posisi persisten, toggle, reset) + Password Gate (default A$rama33, hash SHA-256 lokal, ubah via SETELAN › Password, Kunci Sekarang).
+- Catatan keamanan berulang: token ghp_... yang dipakai push sudah lama & perlu di-revoke user setelah rilis ini.
