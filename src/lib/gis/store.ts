@@ -14,6 +14,7 @@ import type {
   ToolMode,
 } from "./types";
 import { uid } from "./geo";
+import { hapusPiramida } from "./piramida-db";
 
 export type ViewMode = "map" | "layout";
 export type Basemap = "osm" | "sat";
@@ -142,6 +143,10 @@ interface GisStore {
   hapusRaster: (id: string) => void;
   setRasterTerlihat: (id: string, terlihat: boolean) => void;
   setRasterOpasitas: (id: string, opasitas: number) => void;
+  setPiramidaRaster: (
+    id: string,
+    patch: Partial<Pick<RasterLayer, "piramidaSiap" | "piramidaProgres" | "piramidaTahap" | "piramidaUkuranMb" | "piramidaLevelPx" | "piramidaGagal">>
+  ) => void;
 
   // ---------- Layer ----------
   tambahLayer: (nama: string) => string;
@@ -406,12 +411,16 @@ export const useGis = create<GisStore>((set, get) => ({
     set((st) => {
       const lama = st.rasters.find((r) => r.id === id);
       if (lama?.gambarUrl) URL.revokeObjectURL(lama.gambarUrl);
+      // bersihkan juga tile piramida lokal (IndexedDB) — tanpa menahan UI
+      if (lama?.piramidaId) void hapusPiramida(lama.piramidaId).catch(() => {});
       return { rasters: st.rasters.filter((r) => r.id !== id) };
     }),
   setRasterTerlihat: (id, terlihat) =>
     set((st) => ({ rasters: st.rasters.map((r) => (r.id === id ? { ...r, terlihat } : r)) })),
   setRasterOpasitas: (id, opasitas) =>
     set((st) => ({ rasters: st.rasters.map((r) => (r.id === id ? { ...r, opasitas } : r)) })),
+  setPiramidaRaster: (id, patch) =>
+    set((st) => ({ rasters: st.rasters.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
   removeContours: (id) => set((st) => ({ contours: st.contours.filter((c) => c.id !== id) })),
   toggleContourVisible: (id) =>
     set((st) => ({

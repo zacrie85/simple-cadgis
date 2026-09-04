@@ -16,6 +16,15 @@
 
 import * as geotiff from "geotiff";
 import proj4 from "proj4";
+import {
+  ambilMetaPiramida,
+  idPiramidaDariTanda,
+  kunciTile,
+  simpanMetaPiramida,
+  simpanTilePiramida,
+  type LevelPiramida,
+  type MetaPiramida,
+} from "../lib/gis/piramida-db";
 
 export type InfoRaster = {
   lebarPx: number;
@@ -31,8 +40,9 @@ export type InfoRaster = {
 };
 
 type Masuk =
-  | { type: "buka"; id: string; file: File }
+  | { type: "buka"; id: string; file: File; piramidaMb?: number }
   | { type: "batalkan-buka"; id: string }
+  | { type: "batalkan-piramida"; id: string }
   | { type: "batalkan-elevasi" }
   | { type: "elevasi"; id: string; rasterId: string; titik: { lat: number; lng: number }[] };
 
@@ -45,6 +55,7 @@ export type PesanRasterKeluar =
   | { type: "siap"; id: string; info: InfoRaster }
   | { type: "gambar"; id: string; blob: Blob }
   | { type: "elevasi-hasil"; id: string; nilai: (number | null)[] }
+  | { type: "piramida"; id: string; persen: number; tahap: string; selesai?: boolean; gagal?: boolean; ukuranMb?: number; levelMaksPx?: number }
   | { type: "error"; id?: string; message: string };
 
 const ctx = self as unknown as {
@@ -167,7 +178,7 @@ function bilinear(
 }
 
 /** ====== BUKA RASTER: metadata + pratinjau ====== */
-async function bukaRaster(id: string, file: File) {
+async function bukaRaster(id: string, file: File, piramidaMb: number) {
   if (file.size > UKURAN_MAKS) {
     const mb = file.size / 1048576;
     const ukuran = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
@@ -329,6 +340,181 @@ async function bukaRaster(id: string, file: File) {
   const infoFinal = { ...info, lebarPx: w, tinggiPx: h };
   ctx.postMessage({ type: "siap", id, info: infoFinal });
   ctx.postMessage({ type: "gambar", id, blob });
+
+  // ===== piramida detail (opsional) — berjalan SETELAH pratinjau dipakai =====
+  if (piramidaMb > 0 && !dem && w > LEV_PIRAMIDA_AWAL) {
+    void bangunPiramida(id, file, piramidaMb);
+  }
+}
+
+/** ====== PIRAMIDA RASTER: konverter otomatis → tile JPEG bertingkat (IndexedDB) ======
+ * File asli (sampai 1 TB) dibaca SEKALI per level — bila file punya overview (bawaan
+ * GDAL/QGIS), level dibaca dari overview yang jauh lebih kecil → cepat. Hasil ±50–200 MB
+ * tersimpan lokal: peta zoom tajam tanpa membaca ulang file asli, tahan tutup aplikasi.
+ */
+const UKURAN_TILE = 512; // px per tile
+const LEV_PIRAMIDA_AWAL = 4096; // level terkecil (pratinjau 2048 sudah dari impor)
+const BITA_PER_PX_JPEG = 0.19; // taksiran JPEG q0.8 RGB ortofoto
+const ctrlPiramida = new Map<string, AbortController>();
+
+function laporPiramida(
+  id: string,
+  persen: number,
+  tahap: string,
+  ekstra?: { selesai?: boolean; gagal?: boolean; ukuranMb?: number; levelMaksPx?: number }
+) {
+  ctx.postMessage({ type: "piramida", id, persen, tahap, ...ekstra });
+}
+
+async function bangunPiramida(layerId: string, file: File, targetMb: number) {
+  const tanda = `${file.name}|${file.size}|${file.lastModified}`;
+  const pid = idPiramidaDariTanda(tanda);
+  const ac = new AbortController();
+  ctrlPiramida.set(layerId, ac);
+  try {
+    // file yang sama pernah dikonversi → pakai cache (import ulang / buka lagi = instan)
+    const lama = await ambilMetaPiramida(pid);
+    if (lama?.siap && lama.level.length) {
+      laporPiramida(layerId, 100, "Piramida dipakai dari cache lokal", {
+        selesai: true,
+        ukuranMb: lama.ukuranBita / 1048576,
+        levelMaksPx: lama.level[lama.level.length - 1]?.lebarPx,
+      });
+      return;
+    }
+
+    const ref = refDem.get(layerId);
+    if (!ref) throw new Error("Referensi raster hilang.");
+    if (ref.image.getSamplesPerPixel() <= 2) {
+      laporPiramida(layerId, 100, "DEM tidak perlu piramida", { selesai: true, ukuranMb: 0 });
+      return;
+    }
+
+    // kumpulkan overview (NewSubfileType=1) kecil → besar — baca level dari ini = murah
+    const tiff = await geotiff.fromBlob(file);
+    const sumber: CitraTiff[] = [];
+    const jumlah = await tiff.getImageCount();
+    for (let i = 1; i < jumlah; i++) {
+      try {
+        const im = await tiff.getImage(i);
+        const tipe = await tagRaster(im, "NewSubfileType");
+        if (tipe !== 1 || im.getSamplesPerPixel() < 3) continue;
+        sumber.push(im);
+      } catch {
+        /* overview rusak — lewati */
+      }
+    }
+    sumber.sort((a, b) => a.getWidth() - b.getWidth());
+
+    // palet (bila raster terindeks) — dibaca dari basis agar warna benar
+    const fotometri = await tagRaster(ref.image, "PhotometricInterpretation");
+    const palet = fotometri === 3 ? ((await tagRaster(ref.image, "ColorMap")) as number[] | undefined) : undefined;
+
+    // rencana level: 4096, 8192, 16384, … ≤ lebar basis
+    const { w: bw, h: bh } = ref;
+    const rencana: { w: number; h: number }[] = [];
+    for (let lw = LEV_PIRAMIDA_AWAL; lw < bw; lw *= 2) {
+      rencana.push({ w: lw, h: Math.max(1, Math.round((bh / bw) * lw)) });
+    }
+    if (!rencana.length) {
+      laporPiramida(layerId, 100, "Raster kecil — piramida tidak perlu", { selesai: true, ukuranMb: 0 });
+      return;
+    }
+    // potong sesuai anggaran ukuran (mulai kasar → halus); level pertama selalu masuk
+    const anggaran = targetMb * 1048576;
+    const level: LevelPiramida[] = [];
+    let kumulatif = 0;
+    for (const r of rencana) {
+      const taksiran = r.w * r.h * BITA_PER_PX_JPEG;
+      if (level.length > 0 && kumulatif + taksiran > anggaran) break;
+      level.push({
+        lebarPx: r.w,
+        tinggiPx: r.h,
+        kolom: Math.ceil(r.w / UKURAN_TILE),
+        baris: Math.ceil(r.h / UKURAN_TILE),
+      });
+      kumulatif += taksiran;
+    }
+
+    const meta: MetaPiramida = { id: pid, tanda, level: [], siap: false, ukuranBita: 0, dibuat: Date.now() };
+    await simpanMetaPiramida(meta);
+    let totalBita = 0;
+    for (let li = 0; li < level.length; li++) {
+      if (ac.signal.aborted) throw new Error("DIBATALKAN");
+      const lv = level[li];
+      // sumber terkecil yang ≥ level → kalau ada overview, ini overview (baca cepat)
+      let src = ref.image;
+      for (const s of sumber) {
+        if (s.getWidth() >= lv.lebarPx) {
+          src = s;
+          break;
+        }
+      }
+      const sw = src.getWidth();
+      const sh = src.getHeight();
+      const scaleBaca = lv.lebarPx / sw;
+      const scaleBacaY = lv.tinggiPx / sh;
+      for (let baris = 0; baris < lv.baris; baris++) {
+        if (ac.signal.aborted) throw new Error("DIBATALKAN");
+        const y0 = baris * UKURAN_TILE;
+        const y1 = Math.min(lv.tinggiPx, y0 + UKURAN_TILE);
+        const bandH = y1 - y0;
+        // jendela sumber utk pita baris ini (dalam px sumber)
+        const sy0 = Math.max(0, Math.floor(y0 / scaleBacaY));
+        const sy1 = Math.min(sh, Math.max(sy0 + 1, Math.ceil(y1 / scaleBacaY)));
+        const data = await src.readRasters({ window: [0, sy0, sw, sy1], samples: [0, 1, 2], fillValue: 0, signal: ac.signal });
+        const tmp = new OffscreenCanvas(sw, sy1 - sy0);
+        const tctx = tmp.getContext("2d")!;
+        const img = tctx.createImageData(sw, sy1 - sy0);
+        isiPikselRgb(img.data, data, sw * (sy1 - sy0), palet);
+        tctx.putImageData(img, 0, 0);
+        // pecah pita jadi tile 512 px level → JPEG q0.8
+        const entri: { kunci: string; blob: Blob }[] = [];
+        for (let kol = 0; kol < lv.kolom; kol++) {
+          const x0 = kol * UKURAN_TILE;
+          const x1 = Math.min(lv.lebarPx, x0 + UKURAN_TILE);
+          const tc = new OffscreenCanvas(x1 - x0, bandH);
+          tc.getContext("2d")!.drawImage(
+            tmp,
+            x0 / scaleBaca,
+            y0 / scaleBacaY - sy0,
+            (x1 - x0) / scaleBaca,
+            bandH / scaleBacaY,
+            0,
+            0,
+            x1 - x0,
+            bandH
+          );
+          const blob = await tc.convertToBlob({ type: "image/jpeg", quality: 0.8 });
+          totalBita += blob.size;
+          entri.push({ kunci: kunciTile(li, kol, baris), blob });
+        }
+        await simpanTilePiramida(pid, entri);
+        const persen = Math.min(99, Math.round(((li + (baris + 1) / lv.baris) / level.length) * 100));
+        laporPiramida(layerId, persen, `Level ${lv.lebarPx}px — baris ${baris + 1}/${lv.baris}`);
+      }
+      meta.level = level.slice(0, li + 1);
+      meta.ukuranBita = totalBita;
+      await simpanMetaPiramida(meta); // progres tahan crash
+    }
+    meta.level = level;
+    meta.siap = true;
+    meta.ukuranBita = totalBita;
+    await simpanMetaPiramida(meta);
+    laporPiramida(layerId, 100, `Piramida siap — ${level.length} level`, {
+      selesai: true,
+      ukuranMb: totalBita / 1048576,
+      levelMaksPx: level[level.length - 1].lebarPx,
+    });
+  } catch (err) {
+    const dibatal = err instanceof Error && err.message === "DIBATALKAN";
+    laporPiramida(layerId, 0, dibatal ? "Piramida dibatalkan" : "Piramida gagal — pratinjau tetap dipakai", {
+      selesai: true,
+      gagal: true,
+    });
+  } finally {
+    ctrlPiramida.delete(layerId);
+  }
 }
 
 /** Isi buffer RGBA dari hasil readRasters (RGB langsung / grayscale / palet). */
@@ -517,13 +703,15 @@ let batalElevasi = false;
 ctx.addEventListener("message", (e) => {
   const m = e.data;
   if (m.type === "buka") {
-    bukaRaster(m.id, m.file).catch((err: Error) => {
+    bukaRaster(m.id, m.file, m.piramidaMb ?? 0).catch((err: Error) => {
       batalBuka.delete(m.id);
       const pesan = err?.message === "DIBATALKAN" ? "Impor raster dibatalkan." : err?.message || "Gagal membaca raster.";
       ctx.postMessage({ type: "error", id: m.id, message: pesan });
     });
   } else if (m.type === "batalkan-buka") {
     batalBuka.get(m.id)?.abort();
+  } else if (m.type === "batalkan-piramida") {
+    ctrlPiramida.get(m.id)?.abort();
   } else if (m.type === "elevasi") {
     batalElevasi = false;
     elevasiLokal(m.id, m.rasterId, m.titik).catch((err: Error) => {

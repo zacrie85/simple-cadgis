@@ -11,7 +11,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useGis } from "@/lib/gis/store";
-import { bukaRaster } from "@/lib/gis/raster";
+import { batalPiramidaRaster, bukaRaster, padaPiramida } from "@/lib/gis/raster";
+import { idPiramidaDariTanda } from "@/lib/gis/piramida-db";
 import { uid } from "@/lib/gis/geo";
 import type { RasterLayer } from "@/lib/gis/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,9 +29,18 @@ import {
   EyeOff,
   TriangleAlert,
   Download,
+  Layers,
 } from "lucide-react";
 
 const UKURAN_MAKS = 1024 * 1024 * 1024 * 1024; // 1 TB
+
+/** Pilihan anggaran ukuran piramida (konverter otomatis). */
+const KUALITAS_PIRAMIDA = [
+  { v: 0, label: "Nonaktif — pratinjau saja" },
+  { v: 50, label: "Ringan — ±50 MB" },
+  { v: 100, label: "Seimbang — ±100 MB (disarankan)" },
+  { v: 200, label: "Maksimal — ±200 MB" },
+] as const;
 
 export default function RasterDialog() {
   const open = useGis((s) => s.dialogs.raster);
@@ -46,6 +56,22 @@ export default function RasterDialog() {
   const [jalan, setJalan] = useState(false);
   const [progres, setProgres] = useState({ persen: 0, tahap: "" });
   const [drag, setDrag] = useState(false);
+  const [piramidaMb, setPiramidaMb] = useState(100);
+
+  // langganan progres piramida (dikirim worker SETELAH impor sukses)
+  const setPiramidaRaster = useGis((s) => s.setPiramidaRaster);
+  useEffect(() => {
+    const berhenti = padaPiramida((m) => {
+      setPiramidaRaster(m.id, {
+        piramidaProgres: m.persen,
+        piramidaTahap: m.tahap,
+        ...(m.selesai === true
+          ? { piramidaSiap: !m.gagal, piramidaGagal: !!m.gagal, piramidaUkuranMb: m.ukuranMb, piramidaLevelPx: m.levelMaksPx }
+          : {}),
+      });
+    });
+    return berhenti;
+  }, [setPiramidaRaster]);
 
   const terbuka = useRef(false);
   useEffect(() => {
@@ -99,6 +125,7 @@ export default function RasterDialog() {
         kunci: idLayer,
         onProgres: setProgres,
         sinyalBatal: sinyalBatal.current,
+        piramidaMb,
       });
       const layer: RasterLayer = {
         id: idLayer,
@@ -117,6 +144,10 @@ export default function RasterDialog() {
         resolusiLabel: info.resolusiLabel,
         ukuranFileMb: info.ukuranFileMb,
         dibuat: Date.now(),
+        piramidaId:
+          piramidaMb > 0 && !info.dem && info.lebarPx > 4096
+            ? idPiramidaDariTanda(`${file.name}|${file.size}|${file.lastModified}`)
+            : undefined,
       };
       tambahRaster(layer);
       // zoom ke cakupan raster supaya hasil impor langsung terlihat
@@ -125,7 +156,9 @@ export default function RasterDialog() {
         {
           description: info.dem
             ? `${info.sumberCrs} • ${info.resolusiLabel} • DEM 1 band — bisa dipakai menu Elevasi DEM → "Dari File Lokal"`
-            : `${info.sumberCrs} • ${info.resolusiLabel}`,
+            : layer.piramidaId
+              ? `${info.sumberCrs} • ${info.resolusiLabel} • konversi otomatis berjalan — detail tajam menyusul`
+              : `${info.sumberCrs} • ${info.resolusiLabel}`,
         }
       );
     } catch (err) {
@@ -183,6 +216,26 @@ export default function RasterDialog() {
               <p className="mt-1 text-xs text-slate-400">
                 GeoTIFF (.tif / .tiff) — maksimal 1 TB • orthophoto/citra &amp; DEM
               </p>
+              {/* kualitas konversi otomatis (piramida) */}
+              <div className="mt-3 flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-2 text-left">
+                <Layers className="h-4 w-4 shrink-0 text-slate-400" />
+                <div className="min-w-0 flex-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 block">
+                    Konverter otomatis (piramida detail)
+                  </label>
+                  <select
+                    value={piramidaMb}
+                    onChange={(e) => setPiramidaMb(Number(e.target.value))}
+                    className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                  >
+                    {KUALITAS_PIRAMIDA.map((k) => (
+                      <option key={k.v} value={k.v}>
+                        {k.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <input
                 ref={inputRef}
                 type="file"
@@ -288,6 +341,49 @@ export default function RasterDialog() {
                       {Math.round(r.opasitas * 100)}%
                     </span>
                   </div>
+                  {/* status konversi otomatis (piramida detail) */}
+                  {r.piramidaId && !r.dem && (
+                    r.piramidaSiap ? (
+                      <p className="text-[11px] text-emerald-700 bg-emerald-50 rounded-lg px-2 py-1 flex items-start gap-1.5">
+                        <Layers className="h-3 w-3 shrink-0 mt-0.5" />
+                        <span>
+                          Piramida detail siap
+                          {r.piramidaUkuranMb
+                            ? ` — ±${r.piramidaUkuranMb < 10 ? r.piramidaUkuranMb.toFixed(1) : Math.round(r.piramidaUkuranMb)} MB`
+                            : ""}
+                          {r.piramidaLevelPx
+                            ? ` • tajam s/d ${r.piramidaLevelPx.toLocaleString("id-ID")} px`
+                            : ""}
+                          {" • "}import ulang file yang sama = instan (cache)
+                        </span>
+                      </p>
+                    ) : r.piramidaGagal ? (
+                      <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-2 py-1">
+                        Konversi otomatis gagal — pratinjau tetap dipakai
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-emerald-500 transition-all"
+                            style={{ width: `${r.piramidaProgres ?? 0}%` }}
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                          <LoaderCircle className="h-3 w-3 animate-spin shrink-0" />
+                          <span className="min-w-0 truncate">
+                            Konversi otomatis {r.piramidaProgres ?? 0}% — {r.piramidaTahap || "menyiapkan…"}
+                          </span>
+                          <button
+                            onClick={() => batalPiramidaRaster(r.id)}
+                            className="ml-auto shrink-0 text-red-500 hover:underline"
+                          >
+                            batalkan
+                          </button>
+                        </p>
+                      </div>
+                    )
+                  )}
                 </div>
               ))}
             </div>
@@ -297,8 +393,10 @@ export default function RasterDialog() {
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             <span>
               Raster <b>DEM</b> (1 band) otomatis dikenali — buka menu <b>Elevasi DEM</b> lalu pilih sumber{" "}
-              <b>&quot;Dari File Lokal&quot;</b> untuk mengisi elevasi tanpa internet. Layer raster tersimpan
-              selama aplikasi terbuka; Simpan/Muat proyek tidak menyertakan raster (ukuran terlalu besar).
+              <b>&quot;Dari File Lokal&quot;</b> untuk mengisi elevasi tanpa internet. <b>Konverter otomatis</b> membuat
+              piramida detail (±50–200 MB) tersimpan lokal di browser: peta zoom tajam tanpa membaca ulang file asli,
+              dan tahan tutup aplikasi — file sama diimpor ulang = langsung pakai cache. Layer raster sendiri tersimpan
+              selama aplikasi terbuka; Simpan/Muat proyek tidak menyertakan raster.
             </span>
           </p>
         </div>

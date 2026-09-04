@@ -32,6 +32,14 @@ export interface RasterLayer {
   resolusiLabel: string; // mis. "±0,70 m/piksel"
   ukuranFileMb: number;
   dibuat: number; // epoch ms
+  // ---------- Piramida detail (konverter otomatis, tile lokal IndexedDB) ----------
+  piramidaId?: string; // id piramida (stabil dari tanda file — import ulang = cache)
+  piramidaSiap?: boolean; // semua level selesai → peta pakai tile tajam
+  piramidaProgres?: number; // 0..100 saat dibangun
+  piramidaTahap?: string; // label progres, mis. "Level 8192px — baris 3/16"
+  piramidaUkuranMb?: number; // total ukuran tile tersimpan
+  piramidaLevelPx?: number; // level terhalus (lebar px)
+  piramidaGagal?: boolean; // gagal dibangun → pratinjau tetap dipakai
 }
 
 export interface GisPoint {

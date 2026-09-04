@@ -11,6 +11,8 @@ import { ikonDivIcon } from "@/lib/gis/ikon-divicon";
 import { ikonHtml } from "@/lib/gis/ikon-titik";
 import { gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
 import { htmlPanah, sudutPeta } from "@/lib/gis/panah";
+import { ambilMetaPiramida } from "@/lib/gis/piramida-db";
+import { buatLapisanPiramida } from "@/lib/gis/piramida-layer";
 import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
 
 const RENDER_CAP = 20000; // batas keras titik dirender (data lengkap tetap di memori/tabel)
@@ -163,7 +165,9 @@ export default function MapCanvas() {
   // Marker bisa L.CircleMarker (titik polos, kanvas) atau L.Marker (titik berikon divIcon).
   const markerTitikRef = useRef<Map<string, L.CircleMarker | L.Marker>>(new Map());
   const gayaTitikRef = useRef<Map<string, { sel: boolean; urut: boolean; ikon?: string }>>(new Map());
-  const rasterRef = useRef<Map<string, L.ImageOverlay>>(new Map());
+  const rasterRef = useRef<Map<string, { layer: L.ImageOverlay | L.GridLayer; grid: boolean }>>(new Map());
+  // guard pemasangan piramida (proses async) — cegah grid dobel saat effect jalan ulang
+  const piramidaPasangRef = useRef<Set<string>>(new Set());
 
   const points = useGis((s) => s.points);
   const shapes = useGis((s) => s.shapes);
@@ -1281,33 +1285,64 @@ export default function MapCanvas() {
     }
   }, [contours]);
 
-  // ---------- Raster georeferensi (GeoTIFF overlay / DEM lokal) ----------
+  // ---------- Raster georeferensi (GeoTIFF overlay / DEM lokal / piramida tile) ----------
   const rasters = useGis((s) => s.rasters);
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const daftar = rasterRef.current;
+    const pasang = piramidaPasangRef.current;
     const idAktif = new Set(rasters.map((r) => r.id));
     // hapus yang sudah tidak ada
-    for (const [id, ov] of daftar) {
+    for (const [id, ent] of daftar) {
       if (!idAktif.has(id)) {
-        map.removeLayer(ov);
+        map.removeLayer(ent.layer);
         daftar.delete(id);
+        pasang.delete(id);
       }
     }
     for (const r of rasters) {
-      let ov = daftar.get(r.id);
-      if (ov) {
-        ov.setOpacity(r.terlihat ? r.opasitas : 0);
-      } else {
-        ov = L.imageOverlay(r.gambarUrl, L.latLngBounds([r.selatan, r.barat], [r.utara, r.timur]), {
-          opacity: r.terlihat ? r.opasitas : 0,
+      const ent = daftar.get(r.id);
+      const opas = r.terlihat ? r.opasitas : 0;
+      const mauGrid = !!(r.piramidaId && r.piramidaSiap);
+      if (ent) {
+        ent.layer.setOpacity(opas);
+        if (ent.grid === mauGrid) continue;
+      }
+      if (mauGrid && !pasang.has(r.id)) {
+        // tukar overlay pratinjau → lapisan tile piramida (async ambil meta)
+        pasang.add(r.id);
+        const pid = r.piramidaId!;
+        void (async () => {
+          try {
+            const meta = await ambilMetaPiramida(pid);
+            const masih = useGis.getState().rasters.find((x) => x.id === r.id);
+            if (!masih?.piramidaSiap || !meta?.siap || !meta.level.length) return;
+            const gl = buatLapisanPiramida({
+              meta,
+              bounds: L.latLngBounds([masih.selatan, masih.barat], [masih.utara, masih.timur]),
+              opasitas: masih.terlihat ? masih.opasitas : 0,
+            });
+            gl.addTo(map);
+            const lama = daftar.get(r.id);
+            if (lama) map.removeLayer(lama.layer);
+            daftar.set(r.id, { layer: gl, grid: true });
+          } catch {
+            /* meta hilang → overlay pratinjau tetap dipakai */
+          } finally {
+            pasang.delete(r.id);
+          }
+        })();
+      } else if (!ent || !mauGrid) {
+        const ov = L.imageOverlay(r.gambarUrl, L.latLngBounds([r.selatan, r.barat], [r.utara, r.timur]), {
+          opacity: opas,
           pane: "raster-pane",
           interactive: false,
           className: "geokita-raster",
         });
         ov.addTo(map);
-        daftar.set(r.id, ov);
+        if (ent) map.removeLayer(ent.layer);
+        daftar.set(r.id, { layer: ov, grid: false });
       }
     }
   }, [rasters]);

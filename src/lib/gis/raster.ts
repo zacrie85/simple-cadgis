@@ -18,13 +18,29 @@ export interface OpsiProses {
   kunci?: string;
   onProgres?: (p: { persen: number; tahap: string }) => void;
   sinyalBatal?: { dibatalkan: boolean };
+  /** Anggaran ukuran piramida detail (MB). 0/kosong = tanpa piramida. */
+  piramidaMb?: number;
 }
 
 let wk: Worker | null = null;
 
+type PesanPiramida = Extract<PesanRasterKeluar, { type: "piramida" }>;
+const pelangganPiramida = new Set<(m: PesanPiramida) => void>();
+
+/** Langganan progres piramida (id = id layer raster). Kembalikan fungsi berhenti. */
+export function padaPiramida(cb: (m: PesanPiramida) => void): () => void {
+  pelangganPiramida.add(cb);
+  return () => pelangganPiramida.delete(cb);
+}
+
 function pastikanWorker(): Worker {
   if (!wk) {
     wk = new Worker(new URL("../../workers/raster-worker.ts", import.meta.url));
+    // pesan piramida datang SETELAH promise bukaRaster selesai — route via bus sendiri
+    wk.addEventListener("message", (e: MessageEvent<PesanRasterKeluar>) => {
+      const m = e.data;
+      if (m.type === "piramida") pelangganPiramida.forEach((cb) => cb(m));
+    });
   }
   return wk;
 }
@@ -71,7 +87,7 @@ export function bukaRaster(file: File, opsi: OpsiProses = {}): Promise<HasilBuka
     };
     worker.addEventListener("message", dengar);
     worker.addEventListener("error", gagal);
-    worker.postMessage({ type: "buka", id, file });
+    worker.postMessage({ type: "buka", id, file, piramidaMb: opsi.piramidaMb ?? 0 });
   });
 }
 
@@ -117,4 +133,9 @@ export function elevasiDariRaster(
 /** Minta worker menghentikan proses elevasi yang sedang berjalan. */
 export function batalElevasiRaster() {
   wk?.postMessage({ type: "batalkan-elevasi" });
+}
+
+/** Minta worker menghentikan pembangunan piramida suatu layer. */
+export function batalPiramidaRaster(layerId: string) {
+  wk?.postMessage({ type: "batalkan-piramida", id: layerId });
 }
