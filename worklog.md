@@ -742,3 +742,23 @@ Work Log:
 
 Stage Summary:
 - MENU KONVERSI KOORDINAT LIVE DI DEV: satu titik → semua format sekaligus; batch → CSV; ribuan CRS via kode EPSG (online + cache offline); deteksi otomatis saat impor; pilihan CRS saat ekspor (Excel kolom X/Y, DXF meter, SHP + .prj). Batasan jujur: SHP hanya mendukung WGS84/UTM/WebMercator (WKT), KMZ/GPX terkunci WGS84 oleh spesifikasi, dan zona UTM tak bisa ditebak dari angka X/Y (user memilih). Menunggu konfirmasi user → rilis v1.5.0.
+
+---
+Task ID: 33
+Agent: Super Z (main agent)
+Task: Panduan visual saat menggambar bulatan/elips — jangkar titik awal beranimasi + garis bantu tarik dengan label radius + titik pertama otomatis menjadi titik koordinat berikon.
+
+Work Log:
+- Ikon baru "titik-awal" (pin amber silang/target, nama "Titik Awal Tarikan") di ikon-titik.ts — otomatis ikut picker ikon dialog titik.
+- MapCanvas alat bulatan/elips/lengkung dirombong alurnya:
+  - Klik pertama → jangkar langsung tampil: pin "titik-awal" + cincin PULSE animasi CSS (.cadgis-jangkar-pulse, keyframes cadgis-pulse di globals.css) di ujung pin = lokasi koordinat + tooltip petunjuk "Titik awal terpasang — gerakkan mouse lalu klik …" (hilang saat mulai menarik).
+  - Gerak kursor → pratinjau bentuk live (lama) + GARIS BANTU tarik putus-putus amber pusat→kursor + label ukuran di TENGAH garis (gaya dimensi CAD): "R 1.336 km" (bulatan), "711,27 m × 329,60 m" (elips), "R chord/2" (lengkung). Tooltip di kursor dihapus (label pindah ke garis); mode radius manual tetap gaya lama (lingkaran tetap ikut kursor).
+  - Klik kedua / 1-klik radius manual → simpanBentuk kini membawa info titikAwal {lat,lng,jenis,radius/rx/ry}.
+- store.ts: tipe GisStorePendingShape (alias baru) + field titikAwal?; consumePendingShape dikembalikan memakai alias (return type interface sebelumnya inline & korban edit salah yang hampir merusak interface — dipulihkan).
+- FeatureDialogs ShapeForm.simpan(): setelah shape tersimpan, bila pending.titikAwal → buat GisPoint OTOMATIS: ikon "titik-awal", judul "Titik Awal — <judul shape>", deskripsi + attrs (radius / radius-x+radius-y), layer Gambar Manual + toast info. Batal dialog = tidak ada shape & tidak ada titik (bebas yatim).
+- BUG LAMA DITEMUKAN & DIPERBAIKI (inilah penyebab keluhan user "tidak ada garis bantu"): efek "Gambar sementara (pending & ukur)" memanggil l.temp.clearLayers() dgn deps [pendingVertices, measurePoints, tool] — saat alat bentuk aktif, efek itu (dideklarasikan belakangan) menghapus grup pv/pvJangkar DARI PETA sehingga seluruh pratinjau alat bulatan/elips/lengkung tak pernah tampil. Fix: efek chip early-return utk 4 alat bentuk (alat tsb pegang temp sendiri).
+- sw.js v7 → v8. scripts/uji33-*.png di-ignore (tambah .gitignore scripts/*.png), 9 screenshot uji tetap di disk.
+- Uji: tsc + lint + build bersih. E2e browser (agent-browser, dev server di-restart dulu — sesi HMR lama menyajikan modul basi yang menyesatkan diagnosis): bulatan 2-klik (jangkar+petunjuk muncul → tarik: lingkaran pratinjau+garis+label "R 1.336 km" → simpan "Lokasi Demo Radius"), elips (label "711,27 m × 329,60 m", simpan "Area Elips Uji"), radius manual 200 m 1-klik ("Bulatan 200 Meter"), lengkung-kiri (jangkar+label R tetap jalan). Tabel data: 3 titik "Titik Awal — …" dgn koordinat & atribut radius tepat.
+
+Stage Summary:
+- PANDUAN GAMBAR BULATAN/ELIPS LIVE DI DEV: jangkar berdenyut + petunjuk di klik pertama, garis bantu tarik berlabel radius gaya CAD, pratinjau live (bug lama pratinjau yang tak pernah tampil ikut diperbaiki), dan titik pertama otomatis menjadi titik koordinat berikon "Titik Awal Tarikan" lengkap atribut radius. Menunggu konfirmasi user → rilis v1.5.0 (gabungan Task 31+32+33).
