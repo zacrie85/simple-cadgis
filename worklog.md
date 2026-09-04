@@ -879,3 +879,24 @@ Work Log:
 Stage Summary:
 - FITUR BARU: (1) ANALISIS › Terdekat — cari titik dalam radius bebas dari satu koordinat, urut jarak, klik=zoom+pilih, pilih semua; (2) GAMBAR › Panah — garis multi-titik dgn mata panah ujung akhir, ikut layout & simpan proyek; (3) alat GAMBAR (Poligon/Garis/Panah/Teks/Bulatan/Elips/Lengkung/Edit) kini JALAN DI LAYOUT sebagai anotasi keterangan — px kertas, skala peta tak tersentuh, ikut PDF/PNG cetak, tersimpan otomatis di browser, kompatibel mundur.
 - Rilis v1.8.0 (tag) MENUNGGU konfirmasi user setelah uji di Pages.
+
+---
+Task ID: 40
+Agent: Super Z (main)
+Task: Task 40 — menu GAMBAR › Kotak (kotak/persegi 2-klik) di peta & sebagai anotasi layout
+
+Work Log:
+- types.ts: ToolMode + "kotak" (klik sudut awal + klik sudut berlawanan).
+- store.ts: klikPeta bypass utk tool "kotak" (ditangani listener MapCanvas).
+- MapCanvas: ALAT_GAMBAR + kotak; efek alat bentuk bulatan/elips/lengkung diperluas — jangkar titik awal + petunjuk "klik di sudut BERLAWANAN"; pratinjau L.rectangle tegak (sejajar utara) + garis tarik diagonal + label ukuran Lebar×Tinggi (fmtMeter, gaya dimensi CAD); klik ke-2 → simpanBentuk("closed", 4 sudut) via dialog penamaan (sticky, Esc berhenti); guard min 1 m; efek temp-clear skip saat kotak.
+- Kotak disimpan sebagai poligon closed 4 vertiks → otomatis dapat: edit-bentuk (seret sudut), luas & keliling, label, blok data, ekspor KMZ/SHP/DXF/Excel, simpan proyek, ikut layout cetak peta.
+- Toolbar: tombol Kotak (ikon Square lucide) di GAMBAR tepat setelah Elips + tooltip lengkap.
+- Chips: info panduan kotak + ikon chip Square.
+- LayoutView anotasi: jenis + "kotak" (pts = [sudut awal, sudut berlawanan] — rect selalu di-derived ulang); ALAT_ANOTASI + kotak; INFO_ANOT kotak; ruasAnotasi kotak (4 sisi tertutup utk hit-test); kenaAnotasi kotak = uji dalam-bounding (±4 px); AnotBentuk render <rect> (fill 12%, stroke 2, ikut warna dipilih/amber terpilih); onAnotKlik cabang 2-klik (min 4 px); pratinjau rect + garis diagonal + label W×H px; pegangan edit: 2 titik sudut oranye (seret = sudut pindah, rect tetap persegi), drag badan = pindah semua; tombol mini hapus diposisikan di tengah-atas rect (kiri = rerata x, atas = min y).
+- SW v12 → v13 (belum ada v12 live karena v1.8.0 belum dirilis — versi aman). tsc + lint + build BERSIH.
+- Uji e2e browser (dev server): login gate → GAMBAR › Kotak → klik (400,350) → pratinjau rect putus-putus + label "1.517 km × 806.11 m" → klik (720,520) → dialog "Simpan Gambar" → "Kotak Uji" #2563eb → tersimpan (path overlay peta); Esc matikan alat; mode Layout → Kotak → 2 klik di sheet → anotasi rect MERAH tersimpan, skala 1:6.523 TIDAK berubah; Edit Bentuk → klik dalam kotak → terpilih oranye + 2 pegangan sudut + tombol hapus tengah-atas; seret sudut (351,401)→(290,440) → rect mengikuti, tetap persegi.
+- Bukti: scripts/test-kotak-pratinjau.png, test-kotak-jadi.png, test-kotak-layout-preview.png, test-kotak-layout-jadi.png, test-kotak-layout-edit.png, test-kotak-layout-drag.png.
+
+Stage Summary:
+- FITUR BARU: GAMBAR › Kotak — kotak/persegi 2-klik dgn pratinjau live + label ukuran Lebar×Tinggi. Di peta = poligon 4 sudut penuh fitur (edit/luas/ekspor/cetak); di Layout = anotasi rect px kertas (skala tak tersentuh, ikut PDF/PNG, persisten). Alur konsisten dgn Bulatan/Elips (jangkar berdenyut, sticky, Esc).
+- Rilis v1.8.0 (tag) MENUNGGU konfirmasi user — akan mencakup Task 39 + 40 dalam satu rilis.

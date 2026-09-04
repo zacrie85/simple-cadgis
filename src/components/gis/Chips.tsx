@@ -1,7 +1,7 @@
 "use client";
 
 import { useGis } from "@/lib/gis/store";
-import { Check, X, Trash2, Loader2, MousePointerClick, Crop, MapPin, Hexagon, Minus, Type, Circle, Egg, CornerUpLeft, CornerUpRight, PenTool, Ruler, Lasso, MoveUpRight } from "lucide-react";
+import { Check, X, Trash2, Loader2, MousePointerClick, Crop, MapPin, Hexagon, Minus, Type, Circle, Egg, Square, CornerUpLeft, CornerUpRight, PenTool, Ruler, Lasso, MoveUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { useRef, useState, useEffect, useCallback } from "react";
 
@@ -35,6 +35,8 @@ export function DrawChip() {
     bulatan:
       "Bulatan — klik titik awal, gerakkan mouse (pratinjau + garis radius tampil), klik untuk jadi. Atau isi radius manual di panel bawah → 1 klik langsung jadi. Alat tetap aktif — Esc untuk berhenti.",
     elips: "Elips — klik titik awal (pusat), gerakkan mouse (pratinjau elips tampil), klik untuk jadi. Alat tetap aktif — Esc untuk berhenti.",
+    kotak:
+      "Kotak — klik sudut awal, gerakkan mouse (pratinjau kotak + ukuran Lebar×Tinggi tampil), klik di sudut BERLAWANAN. Kotak jadi poligon 4 sudut: bisa diedit & dihitung luasnya. Alat tetap aktif — Esc untuk berhenti.",
     "lengkung-kiri": "Lengkung kiri — klik titik awal, gerakkan mouse (busur pratinjau tampil), klik di ujung busur. Alat tetap aktif — Esc untuk berhenti.",
     "lengkung-kanan": "Lengkung kanan — klik titik awal, gerakkan mouse (busur pratinjau tampil), klik di ujung busur. Alat tetap aktif — Esc untuk berhenti.",
     "edit-bentuk":
@@ -42,7 +44,7 @@ export function DrawChip() {
   };
 
   const IkonChip =
-    tool === "select" ? MousePointerClick : tool === "select-poligon" ? Lasso : tool === "zoombox" ? Crop : tool === "point" ? MapPin : tool === "poly-closed" ? Hexagon : tool === "poly-open" ? Minus : tool === "panah" ? MoveUpRight : tool === "text" ? Type : tool === "bulatan" ? Circle : tool === "elips" ? Egg : tool === "lengkung-kiri" ? CornerUpLeft : tool === "lengkung-kanan" ? CornerUpRight : tool === "edit-bentuk" ? PenTool : tool === "measure" ? Ruler : null;
+    tool === "select" ? MousePointerClick : tool === "select-poligon" ? Lasso : tool === "zoombox" ? Crop : tool === "point" ? MapPin : tool === "poly-closed" ? Hexagon : tool === "poly-open" ? Minus : tool === "panah" ? MoveUpRight : tool === "text" ? Type : tool === "bulatan" ? Circle : tool === "elips" ? Egg : tool === "kotak" ? Square : tool === "lengkung-kiri" ? CornerUpLeft : tool === "lengkung-kanan" ? CornerUpRight : tool === "edit-bentuk" ? PenTool : tool === "measure" ? Ruler : null;
 
   const alatDragKotak = tool === "select" || tool === "zoombox";
 

@@ -94,8 +94,8 @@ type ItemLegendaKustom = { id: string; teks: string; simbol: "garis" | "kotak" |
  *  tujuannya menambah keterangan pada layout TANPA mengubah skala peta. Ikut tercetak PDF/PNG. */
 interface AnotasiLayout {
   id: string;
-  jenis: "garis" | "panah" | "poligon" | "bulatan" | "elips" | "lengkung" | "teks";
-  /** garis/panah/poligon: vertiks • bulatan/elips: [pusat] • lengkung: [awal, akhir] • teks: [posisi pusat] */
+  jenis: "garis" | "panah" | "poligon" | "bulatan" | "elips" | "kotak" | "lengkung" | "teks";
+  /** garis/panah/poligon: vertiks • bulatan/elips: [pusat] • kotak: [sudut awal, sudut berlawanan] • lengkung: [awal, akhir] • teks: [posisi pusat] */
   pts: { x: number; y: number }[];
   r?: number; // radius bulatan (px kertas)
   rx?: number; // jangkauan elips horizontal (px)
@@ -109,7 +109,7 @@ interface AnotasiLayout {
 const KUNCI_ANOTASI = "cadgis_layout_anotasi_v1";
 const WARNA_ANOTASI = ["#dc2626", "#2563eb", "#059669", "#d97706", "#7c3aed", "#0f172a"];
 /** Alat grup GAMBAR yang di mode layout berperan sebagai anotasi. */
-const ALAT_ANOTASI = ["poly-closed", "poly-open", "panah", "text", "bulatan", "elips", "lengkung-kiri", "lengkung-kanan", "edit-bentuk"];
+const ALAT_ANOTASI = ["poly-closed", "poly-open", "panah", "text", "bulatan", "elips", "kotak", "lengkung-kiri", "lengkung-kanan", "edit-bentuk"];
 
 /** Panduan chip anotasi layout. */
 const INFO_ANOT: Record<string, string> = {
@@ -119,6 +119,7 @@ const INFO_ANOT: Record<string, string> = {
   text: "Klik lokasi di layout untuk menulis keterangan — bisa multi-baris (Enter = baris baru, Ctrl+Enter simpan).",
   bulatan: "Bulatan anotasi — klik pusat, gerakkan mouse (pratinjau tampil), klik untuk menetapkan radius (px kertas).",
   elips: "Elips anotasi — klik pusat, gerakkan mouse (pratinjau tampil), klik untuk menetapkan jangkauan.",
+  kotak: "Kotak anotasi — klik sudut awal, gerakkan mouse (pratinjau tampil), klik di sudut berlawanan. Skala peta tidak berubah.",
   "lengkung-kiri": "Lengkung kiri — klik awal, gerakkan mouse, klik di ujung busur.",
   "lengkung-kanan": "Lengkung kanan — klik awal, gerakkan mouse, klik di ujung busur.",
   "edit-bentuk": "Edit anotasi — klik bentuk: seret titik oranye = pindah titik • seret badan = pindah semua • Alt+klik titik = hapus titik • Esc berhenti.",
@@ -183,6 +184,17 @@ function ruasAnotasi(a: AnotasiLayout): { x: number; y: number }[][] {
       return [a.pts];
     case "poligon":
       return [a.pts.length ? [...a.pts, a.pts[0]] : a.pts];
+    case "kotak": {
+      const [p1, p2] = a.pts;
+      if (!p1 || !p2) return [];
+      return [[
+        { x: p1.x, y: p1.y },
+        { x: p2.x, y: p1.y },
+        { x: p2.x, y: p2.y },
+        { x: p1.x, y: p2.y },
+        { x: p1.x, y: p1.y },
+      ]];
+    }
     case "lengkung":
       return a.pts.length >= 2 ? [sampelLengkungPx(a.pts[0], a.pts[1], a.arah ?? "kiri")] : [];
     case "bulatan": {
@@ -232,6 +244,13 @@ function kenaAnotasi(a: AnotasiLayout, p: { x: number; y: number }): boolean {
     return Math.abs(p.x - c.x) <= w / 2 + 4 && Math.abs(p.y - c.y) <= h / 2 + 4;
   }
   if (a.jenis === "poligon" && a.pts.length >= 3 && dalamPoligonPx(p, a.pts)) return true;
+  if (a.jenis === "kotak" && a.pts[0] && a.pts[1]) {
+    const xs = [a.pts[0].x, a.pts[1].x];
+    const ys = [a.pts[0].y, a.pts[1].y];
+    return (
+      p.x >= Math.min(...xs) - 4 && p.x <= Math.max(...xs) + 4 && p.y >= Math.min(...ys) - 4 && p.y <= Math.max(...ys) + 4
+    );
+  }
   return ruasAnotasi(a).some((garis) => {
     for (let i = 0; i < garis.length - 1; i++) {
       if (jarakKeRuasPx(p, garis[i], garis[i + 1]) < 9) return true;
@@ -258,6 +277,23 @@ function AnotBentuk({ a, terpilih }: { a: AnotasiLayout; terpilih: boolean }) {
   }
   if (a.jenis === "poligon" && a.pts.length >= 3) {
     return <polygon points={koordinat} fill={warna} fillOpacity={0.12} stroke={warna} strokeWidth={2} strokeLinejoin="round" />;
+  }
+  if (a.jenis === "kotak" && a.pts[0] && a.pts[1]) {
+    const p1 = a.pts[0];
+    const p2 = a.pts[1];
+    return (
+      <rect
+        x={Math.min(p1.x, p2.x)}
+        y={Math.min(p1.y, p2.y)}
+        width={Math.max(Math.abs(p2.x - p1.x), 1)}
+        height={Math.max(Math.abs(p2.y - p1.y), 1)}
+        fill={warna}
+        fillOpacity={0.12}
+        stroke={warna}
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+    );
   }
   if (a.jenis === "bulatan" && a.pts[0] && a.r) {
     return <circle cx={a.pts[0].x} cy={a.pts[0].y} r={a.r} fill={warna} fillOpacity={0.1} stroke={warna} strokeWidth={2} />;
@@ -1104,6 +1140,18 @@ export default function LayoutView() {
         }
         setPendingAnot([]);
       }
+    } else if (tool === "kotak") {
+      if (pendingAnot.length === 0) {
+        setPendingAnot([p]);
+      } else {
+        const a = pendingAnot[0];
+        if (Math.abs(p.x - a.x) < 4 && Math.abs(p.y - a.y) < 4) {
+          toast.error("Kotak terlalu kecil", { description: "Klik sudut berlawanan lebih jauh." });
+          return;
+        }
+        simpanAnot({ jenis: "kotak", pts: [a, p], warna: warnaAnot });
+        setPendingAnot([]);
+      }
     } else if (tool === "lengkung-kiri" || tool === "lengkung-kanan") {
       if (pendingAnot.length === 0) {
         setPendingAnot([p]);
@@ -1464,6 +1512,30 @@ export default function LayoutView() {
                   const ry = Math.abs(k.y - c.y);
                   return <ellipse cx={c.x} cy={c.y} rx={Math.max(rx, 1)} ry={Math.max(ry, 1)} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={2} strokeDasharray="6 5" />;
                 }
+                if (tool === "kotak" && pendingAnot.length === 1 && k) {
+                  const c = pendingAnot[0];
+                  const w = Math.abs(k.x - c.x);
+                  const h = Math.abs(k.y - c.y);
+                  return (
+                    <g>
+                      <rect
+                        x={Math.min(c.x, k.x)}
+                        y={Math.min(c.y, k.y)}
+                        width={Math.max(w, 1)}
+                        height={Math.max(h, 1)}
+                        fill="#2563eb"
+                        fillOpacity={0.08}
+                        stroke="#2563eb"
+                        strokeWidth={2}
+                        strokeDasharray="6 5"
+                      />
+                      <line x1={c.x} y1={c.y} x2={k.x} y2={k.y} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 5" />
+                      <text x={(c.x + k.x) / 2} y={(c.y + k.y) / 2 - 8} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1d4ed8" style={{ paintOrder: "stroke" }} stroke="white" strokeWidth={3}>
+                        {Math.round(w)} × {Math.round(h)} px
+                      </text>
+                    </g>
+                  );
+                }
                 if ((tool === "lengkung-kiri" || tool === "lengkung-kanan") && pendingAnot.length === 1 && k) {
                   const d = sampelLengkungPx(pendingAnot[0], k, tool === "lengkung-kiri" ? "kiri" : "kanan")
                     .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
@@ -1541,7 +1613,7 @@ export default function LayoutView() {
               };
               const gayaTengah: React.CSSProperties = { ...gayaHandle, background: "#2563eb", borderRadius: 9999, width: 11, height: 11 };
               const node: React.ReactNode[] = [];
-              if (["garis", "panah", "poligon", "lengkung"].includes(anotPilih.jenis)) {
+              if (["garis", "panah", "poligon", "kotak", "lengkung"].includes(anotPilih.jenis)) {
                 anotPilih.pts.forEach((p, i) =>
                   node.push(
                     <div
@@ -1618,12 +1690,17 @@ export default function LayoutView() {
               <div
                 className="absolute z-[965] flex gap-1 print:hidden"
                 style={{
-                  left: anotPilih.pts[0].x,
+                  left:
+                    anotPilih.jenis === "kotak" && anotPilih.pts[1]
+                      ? (anotPilih.pts[0].x + anotPilih.pts[1].x) / 2
+                      : anotPilih.pts[0].x,
                   top:
                     anotPilih.pts[0].y -
                     (anotPilih.jenis === "teks"
                       ? kotakTeks(anotPilih).h / 2
-                      : (anotPilih.r ?? Math.max(anotPilih.rx ?? 0, anotPilih.ry ?? 0, 20))) -
+                      : anotPilih.jenis === "kotak" && anotPilih.pts[1]
+                        ? anotPilih.pts[0].y - Math.min(anotPilih.pts[0].y, anotPilih.pts[1].y)
+                        : (anotPilih.r ?? Math.max(anotPilih.rx ?? 0, anotPilih.ry ?? 0, 20))) -
                     12,
                   transform: "translate(-50%, -100%)",
                 }}

@@ -283,8 +283,8 @@ export const useGis = create<GisStore>((set, get) => ({
     // alat blok & zoom kotak ditangani interaksi drag di MapCanvas, bukan klik
     // blok poligon: klik vertiks ditangani listener khusus MapCanvas (urutan klik & dobel-klik)
     if (tool === "select" || tool === "zoombox" || tool === "select-poligon") return;
-    // alat bentuk khusus (bulatan/elips/lengkung/edit) ditangani listener MapCanvas
-    if (tool === "bulatan" || tool === "elips" || tool === "lengkung-kiri" || tool === "lengkung-kanan" || tool === "edit-bentuk") return;
+    // alat bentuk khusus (bulatan/elips/kotak/lengkung/edit) ditangani listener MapCanvas
+    if (tool === "bulatan" || tool === "elips" || tool === "kotak" || tool === "lengkung-kiri" || tool === "lengkung-kanan" || tool === "edit-bentuk") return;
     // tanpa alat: klik area kosong → bersihkan seleksi
     set({ selection: [] });
   },

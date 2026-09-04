@@ -104,6 +104,7 @@ export type ToolMode =
   | "zoombox" // zoom ke area dengan drag kotak
   | "bulatan" // lingkaran: klik pusat + klik radius
   | "elips" // elips: klik pusat + klik jangkauan
+  | "kotak" // kotak: klik sudut awal + klik sudut berlawanan (pratinjau + ukuran L×T tampil)
   | "lengkung-kiri" // busur setengah lingkaran belok kiri: klik awal + klik akhir
   | "lengkung-kanan" // busur setengah lingkaran belok kanan: klik awal + klik akhir
   | "panah" // garis anak panah: klik jalur (min. 2) → mata panah di ujung akhir

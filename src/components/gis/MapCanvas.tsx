@@ -33,7 +33,7 @@ let dragTambah = false;
 
 // Alat gambar: saat aktif, klik pada fitur TIDAK membuka popup — klik diteruskan
 // ke peta sebagai vertiks/tarikan (mis. bulatan di sekitar titik ODP)
-const ALAT_GAMBAR = ["point", "text", "poly-closed", "poly-open", "panah", "measure", "bulatan", "elips", "lengkung-kiri", "lengkung-kanan"] as const;
+const ALAT_GAMBAR = ["point", "text", "poly-closed", "poly-open", "panah", "measure", "bulatan", "elips", "kotak", "lengkung-kiri", "lengkung-kanan"] as const;
 
 /** Kumpulan layer Leaflet milik peta utama (diisi sekali saat init). */
 type LayerMap = {
@@ -540,10 +540,10 @@ export default function MapCanvas() {
     };
   }, [tool, view]);
 
-  // ---------- Alat bentuk: bulatan / elips / lengkung kiri-kanan ----------
+  // ---------- Alat bentuk: bulatan / elips / kotak / lengkung kiri-kanan ----------
   useEffect(() => {
     if (view === "layout") return; // nonaktif saat mode layout (anotasi ditangani LayoutView)
-    if (tool !== "bulatan" && tool !== "elips" && tool !== "lengkung-kiri" && tool !== "lengkung-kanan") return;
+    if (tool !== "bulatan" && tool !== "elips" && tool !== "kotak" && tool !== "lengkung-kiri" && tool !== "lengkung-kanan") return;
     const map = mapRef.current;
     const l = layerRef.current;
     if (!map || !l) return;
@@ -570,6 +570,7 @@ export default function MapCanvas() {
           : "Titik awal terpasang — gerakkan mouse lalu klik untuk menentukan radius";
       }
       if (tool === "elips") return "Titik awal terpasang — gerakkan mouse lalu klik untuk menentukan jangkauan elips";
+      if (tool === "kotak") return "Sudut awal terpasang — gerakkan mouse lalu klik di sudut BERLAWANAN";
       return "Titik awal terpasang — gerakkan mouse lalu klik di ujung busur";
     };
 
@@ -620,6 +621,18 @@ export default function MapCanvas() {
           gaya
         ).addTo(pv);
         garisTarik(`${fmtMeter(Math.abs(P.x))} × ${fmtMeter(Math.abs(P.y))}`);
+      } else if (tool === "kotak") {
+        // pratinjau kotak tegak (sejajar utara) + garis diagonal + ukuran Lebar × Tinggi
+        L.rectangle(
+          [
+            [Math.min(awal.lat, e.latlng.lat), Math.min(awal.lng, e.latlng.lng)],
+            [Math.max(awal.lat, e.latlng.lat), Math.max(awal.lng, e.latlng.lng)],
+          ],
+          gaya
+        ).addTo(pv);
+        const lebar = jarakHaversine({ lat: awal.lat, lng: awal.lng }, { lat: awal.lat, lng: e.latlng.lng });
+        const tinggi = jarakHaversine({ lat: awal.lat, lng: awal.lng }, { lat: e.latlng.lat, lng: awal.lng });
+        garisTarik(`${fmtMeter(lebar)} × ${fmtMeter(tinggi)}`);
       } else {
         const arah = tool === "lengkung-kiri" ? "kiri" : "kanan";
         L.polyline(
@@ -694,6 +707,21 @@ export default function MapCanvas() {
           rx: Math.abs(P.x),
           ry: Math.abs(P.y),
         });
+      } else if (tool === "kotak") {
+        // kotak = poligon tertutup 4 sudut (sejajar utara) — otomatis bisa di-edit,
+        // dihitung luasnya, diekspor (KMZ/SHP/DXF), dan ikut layout cetak
+        const lebar = jarakHaversine({ lat: awal.lat, lng: awal.lng }, { lat: awal.lat, lng: akhir.lng });
+        const tinggi = jarakHaversine({ lat: awal.lat, lng: awal.lng }, { lat: akhir.lat, lng: awal.lng });
+        if (lebar < 1 && tinggi < 1) {
+          toast.error("Kotak terlalu kecil — klik sudut berlawanan lebih jauh.");
+          return;
+        }
+        simpanBentuk("closed", [
+          { lat: awal.lat, lng: awal.lng },
+          { lat: awal.lat, lng: akhir.lng },
+          { lat: akhir.lat, lng: akhir.lng },
+          { lat: akhir.lat, lng: awal.lng },
+        ]);
       } else {
         const chord = jarakHaversine(awal, akhir);
         if (chord < 1) {
@@ -1288,10 +1316,10 @@ export default function MapCanvas() {
   useEffect(() => {
     const l = layerRef.current;
     if (!l) return;
-    // alat bentuk (bulatan/elips/lengkung) memegang l.temp lewat efek khususnya sendiri
+    // alat bentuk (bulatan/elips/kotak/lengkung) memegang l.temp lewat efek khususnya sendiri
     // (grup pratinjau + jangkar titik awal) — clearLayers di sini akan ikut MENGHAPUS
     // grup tersebut dari peta sehingga pratinjau/garis bantu tak pernah tampak.
-    if (tool === "bulatan" || tool === "elips" || tool === "lengkung-kiri" || tool === "lengkung-kanan") return;
+    if (tool === "bulatan" || tool === "elips" || tool === "kotak" || tool === "lengkung-kiri" || tool === "lengkung-kanan") return;
     l.temp.clearLayers();
 
     if (pendingVertices.length > 0) {
