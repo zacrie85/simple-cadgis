@@ -40,6 +40,8 @@ import {
   Waypoints,
   Gauge,
   Sticker,
+  Copy,
+  ClipboardPaste,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -143,7 +145,7 @@ export default function Toolbar() {
         { label: "Garis", icon: Minus, title: "Poligon/garis terbuka (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-open"), active: s.tool === "poly-open" },
         { label: "Dari Titik", icon: Waypoints, title: "Buat poligon/garis otomatis dari titik yang sudah ada — pilih titik satu per satu (urutan pilihan = urutan sambungan), lewat daftar, input nomor, atau klik di peta", onClick: () => s.setDialog("poligonTitik", true), active: s.dialogs.poligonTitik },
         { label: "Teks", icon: Type, title: "Tambah label teks (klik peta)", onClick: () => setTool("text"), active: s.tool === "text" },
-        { label: "Bulatan", icon: Circle, title: "Buat lingkaran — klik pusat, lalu klik radius", onClick: () => setTool("bulatan"), active: s.tool === "bulatan" },
+        { label: "Bulatan", icon: Circle, title: "Buat lingkaran — klik pusat, lalu klik radius. Bisa juga isi radius manual (meter) di panel atas peta lalu cukup 1 klik", onClick: () => setTool("bulatan"), active: s.tool === "bulatan" },
         { label: "Elips", icon: Egg, title: "Buat elips — klik pusat, lalu klik jangkauan (kanan-atas)", onClick: () => setTool("elips"), active: s.tool === "elips" },
         { label: "Lengkung ←", icon: CornerUpLeft, title: "Busur belok KIRI (setengah lingkaran) — klik awal, lalu klik akhir", onClick: () => setTool("lengkung-kiri"), active: s.tool === "lengkung-kiri" },
         { label: "Lengkung →", icon: CornerUpRight, title: "Busur belok KANAN (setengah lingkaran) — klik awal, lalu klik akhir", onClick: () => setTool("lengkung-kanan"), active: s.tool === "lengkung-kanan" },
@@ -179,6 +181,44 @@ export default function Toolbar() {
           onClick: () => s.setDialog("ikonTitik", true),
           active: s.dialogs.ikonTitik,
           disabled: !s.points.some((p) => s.selection.includes(p.id)),
+        },
+        {
+          label: "Salin",
+          icon: Copy,
+          title:
+            jumlahTerpilih > 0
+              ? `Salin ${jumlahTerpilih} fitur terpilih ke papan klip (Ctrl+C) — lalu Tempel untuk menduplikasi`
+              : "Salin fitur terpilih (Ctrl+C) — pilih dulu: klik fitur, Blok, atau centang di Tabel",
+          onClick: () => {
+            const n = s.salinTerpilih();
+            if (n.titik + n.bentuk === 0) {
+              toast.info("Tidak ada fitur terpilih", { description: "Pilih dulu: klik fitur, pakai Blok, atau centang di Tabel Data." });
+              return;
+            }
+            toast.success(`${n.titik + n.bentuk} fitur disalin`, {
+              description: `${n.titik} titik + ${n.bentuk} poligon/garis. Tekan Ctrl+V atau tombol Tempel untuk menduplikasi.`,
+            });
+          },
+          disabled: jumlahTerpilih === 0,
+        },
+        {
+          label: "Tempel",
+          icon: ClipboardPaste,
+          title:
+            s.clipboard.points.length + s.clipboard.shapes.length > 0
+              ? `Tempel ${s.clipboard.points.length + s.clipboard.shapes.length} salinan fitur ke tengah tampilan peta (Ctrl+V)`
+              : "Tempel salinan fitur (Ctrl+V) — papan klip masih kosong, pakai Salin dulu",
+          onClick: () => {
+            const n = s.tempelClipboard();
+            if (!n) {
+              toast.info("Papan klip masih kosong", { description: "Salin dulu fitur yang terpilih dengan Ctrl+C atau tombol Salin." });
+              return;
+            }
+            toast.success(`${n.titik + n.bentuk} fitur ditempel`, {
+              description: `${n.titik} titik + ${n.bentuk} poligon/garis diletakkan di tengah tampilan peta — semuanya langsung terpilih.`,
+            });
+          },
+          disabled: s.clipboard.points.length + s.clipboard.shapes.length === 0,
         },
       ],
     },

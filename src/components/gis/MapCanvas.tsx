@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { toast } from "sonner";
+import { Circle } from "lucide-react";
 import { useGis } from "@/lib/gis/store";
 import { warnaElevasi } from "@/lib/gis/contours";
 import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
@@ -159,6 +160,10 @@ export default function MapCanvas() {
 
   const points = useGis((s) => s.points);
   const shapes = useGis((s) => s.shapes);
+  // radius manual lingkaran (alat Bulatan): teks input + cermin angka di ref agar
+  // listener peta (efek [tool]) selalu membaca nilai terbaru tanpa registrasi ulang
+  const [radiusManual, setRadiusManual] = useState("");
+  const radiusManualRef = useRef(0);
   const labels = useGis((s) => s.labels);
   const contours = useGis((s) => s.contours);
   const layers = useGis((s) => s.layers);
@@ -460,6 +465,15 @@ export default function MapCanvas() {
       pv.clearLayers();
       const gaya = { color: "#2563eb", weight: 2, dashArray: "6 5", fillColor: "#3b82f6", fillOpacity: 0.08, interactive: false };
       if (tool === "bulatan") {
+        const rm = radiusManualRef.current;
+        if (rm > 0) {
+          // radius manual: pratinjau lingkaran berukuran TETAP mengikuti kursor —
+          // 1 klik cukup untuk menetapkan pusat
+          L.circle(e.latlng, { ...gaya, radius: rm }).addTo(pv);
+          L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
+            .setLatLng(e.latlng).setContent(`R ${fmtMeter(rm)} • klik = pusat`).addTo(pv);
+          return;
+        }
         const r = jarakHaversine(awal, e.latlng);
         L.circle(awal, { ...gaya, radius: r }).addTo(pv);
         L.tooltip({ permanent: true, direction: "top", className: "geokita-measure-label" })
@@ -495,6 +509,16 @@ export default function MapCanvas() {
     };
 
     const onKlik = (e: L.LeafletMouseEvent) => {
+      // radius manual aktif → SATU klik langsung menjadi lingkaran jadi
+      if (tool === "bulatan" && radiusManualRef.current > 0) {
+        const rm = radiusManualRef.current;
+        if (rm < 0.1) {
+          toast.error("Radius manual terlalu kecil — isi minimal 0,1 meter.");
+          return;
+        }
+        simpanBentuk("closed", titikLingkaran(e.latlng, rm));
+        return;
+      }
       if (!awal) {
         awal = e.latlng;
         return;
@@ -1081,7 +1105,39 @@ export default function MapCanvas() {
     }
   }, [view]);
 
-  return <div ref={containerRef} className="absolute inset-0 z-0" aria-label="Peta utama" role="application" />;
+  return (
+    <>
+      <div ref={containerRef} className="absolute inset-0 z-0" aria-label="Peta utama" role="application" />
+      {/* Panel radius manual alat Bulatan — di bawah chip draw/ukur (top-3) agar tak bertumpuk */}
+      {tool === "bulatan" && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[650] print:hidden flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-lg">
+          <Circle className="h-4 w-4 shrink-0 text-blue-600" />
+          <label className="text-xs font-semibold text-slate-700 whitespace-nowrap" htmlFor="radius-manual-bulatan">
+            Radius manual (m):
+          </label>
+          <input
+            id="radius-manual-bulatan"
+            type="text"
+            inputMode="decimal"
+            value={radiusManual}
+            placeholder="kosong = klik 2×"
+            aria-label="Radius lingkaran manual dalam meter"
+            onChange={(e) => {
+              setRadiusManual(e.target.value);
+              const n = parseFloat(e.target.value.replace(",", "."));
+              radiusManualRef.current = isFinite(n) && n > 0 ? n : 0;
+            }}
+            className="w-28 rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-blue-400 focus:bg-blue-50"
+          />
+          {radiusManualRef.current > 0 ? (
+            <span className="text-[10px] font-medium text-blue-600 whitespace-nowrap">1 klik langsung jadi</span>
+          ) : (
+            <span className="text-[10px] text-slate-400 whitespace-nowrap">klik pusat → klik radius</span>
+          )}
+        </div>
+      )}
+    </>
+  );
 }
 
 // ---------- Popup fitur ----------

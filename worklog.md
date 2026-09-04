@@ -705,3 +705,24 @@ Work Log:
 Stage Summary:
 - RILIS v1.4.0 SELESAI (web + installer): berisi grid koordinat DMS pada layout cetak (interval manual D/M/S, 2 mode garis: putus-putus silang / tick pendek, label 4 sisi gaya peta topografi, ikut PDF/PNG) + 10 ikon titik as-built fiber optik (pin warna, tiang tumpu, ODP, ODC, closure, handhole, menara) dgn pemilih per titik di dialog buat/edit + ganti massal utk titik hasil Blok.
 - Token baru user dipakai utk push ini; ingatkan mencabut (revoke) setelah sesi.
+
+---
+Task ID: 31
+Agent: Super Z (main agent)
+Task: Empat upgrade dari user — (1) label grid layout kiri/kanan VERTIKAL ala referensi; (2) impor+ekspor GPX/DXF/DWG; (3) copy-paste semua data (seleksi tunggal/blok); (4) radius manual saat membuat lingkaran.
+
+Work Log:
+- Fitur 1 (LayoutView): formatDMS digaya referensi — detik 1 desimal + sufiks Indonesia BT/LS/LU/BB (mis. 106°46'48.0"BT, 7°1'1.0"LS), teks label biru; chip kiri/kanan kini VERTIKAL via jangkar titik-nol + transform translate(-50%,-50%) rotate(-90deg) (terbaca dari bawah ke atas, persis referensi), atas/bawah tetap horizontal.
+- Fitur 2 (lib baru src/lib/gis/gpxdxf.ts + ImportDialog + ExportDialog):
+  - GPX impor: wpt→titik (ele→elevasi, sym→attrs), trk/trkseg→garis, rte→garis (DOMParser). GPX selalu WGS84 — tanpa pertanyaan CRS.
+  - DXF impor: parser ASCII kode-nilai; entitas POINT/LINE/LWPOLYLINE/POLYLINE-VERTEX-SEQEND(klasik R12)/CIRCLE/ARC/TEXT-MTEXT(3+1); deteksi otomatis derajat vs meter — bila meter, fase baru "crs-dxf" memilih zona UTM 1-60 + hemisfer S/N (default 49S) lalu konversi proj4; DXF biner ditolak dengan pesan.
+  - DWG: biner proprietary (sama seperti ECW) → panel panduan konversi ke DXF (AutoCAD SAVEAS / ODA File Converter / QGIS).
+  - Ekspor GPX (wpt/trk, poligon→track loop) & DXF R12 ASCII (POINT+TEXT judul, POLYLINE/VERTEX per layer disanitasi, derajat WGS84 ter-georeferensi, round-trip teruji). Tombol GPX/DXF di dialog Ekspor (grid 3+2).
+- Fitur 3 (store + GisApp + Toolbar): clipboard internal + salinTerpilih()/tempelClipboard(); tempel = duplikasi id baru di pusat tampilan peta (pusat bbox salinan→pusat view), layer asal dipertahankan/fallback Gambar Manual, hasil tempel langsung terpilih; Ctrl+C/Ctrl+V global (diabaikan di input/textarea/dialog) + tombol "Salin"/"Tempel" di grup Pilih dengan toast.
+- Fitur 4 (MapCanvas): panel radius manual (m) muncul saat alat Bulatan aktif (top-14, tak menabrak chip draw); radius di ref agar listener peta tak perlu re-registrasi; radius>0 → pratinjau lingkaran ukuran tetap mengikuti kursor + 1 KLIK langsung jadi; kosong = alur 2 klik lama.
+- types.ts: source + "gpx"|"dxf". sw.js v5→v6.
+- BUG ditemukan saat uji: nama layer impor GPX/DXF jatuh ke "Data Impor" karena state React stale di callback async → fix: nama file diteruskan sbg PARAMETER (dxfNamaFileRef utk jalur CRS).
+- Uji: scripts/uji-gpx-dxf.ts — 26/26 lulus (entitas lengkap, UTM 49S↔latlng akurat 1e-6, POLYLINE klasik, DXF biner, MTEXT 3+1, round-trip ekspor→impor, escape XML). E2e browser: blok 7 fitur → Salin/Tempel (tombol & Ctrl+C/V) → +7 salinan terpilih; lingkaran radius 200 m 1-klik (64 titik, 12.63 ha ≈ π r²); impor GPX (2 titik+1 track, layer "uji"); impor DXF UTM 49S (2 titik elev 15/16 m tepat -6.99429/110.42940, garis 93.5 m, poligon 3021 m², lingkaran r60 → 1.14 ha, teks, layer "uji-utm"); panel DWG muncul; ekspor GPX valid XML (29 wpt+7 trk); grid: 18 label BT horizontal + 12 label LS VERTIKAL, mode tick 30 tick, ekspor PNG sukses (2246×1588). Catatan: headless blokir unduhan ke-2/3 (multi-download) — bukan bug aplikasi. tsc+lint+build bersih.
+
+Stage Summary:
+- EMPAT FITUR BARU LIVE DI DEV: (1) label grid DMS vertikal kiri/kanan gaya peta topografi Indonesia; (2) GPX & DXF impor-ekspor penuh + DWG panduan konversi (jalan tengah jujur spt ECW); (3) copy-paste semua fitur via Ctrl+C/V & tombol (seleksi tunggal/blok, tempel di pusat view); (4) radius manual lingkaran 1-klik. Menunggu konfirmasi user → rilis v1.5.0.

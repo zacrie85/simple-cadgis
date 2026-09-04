@@ -54,22 +54,24 @@ const tanggalKini = () => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 };
 
-/** Format koordinat derajat-menit-detik gaya peta topografi: 106°56'6"E / 6°11'42"S */
+/** Format koordinat derajat-menit-detik gaya peta topografi Indonesia:
+ *  106°46'48.0"BT (bujur timur) / 6°35'24.0"LS (lintang selatan) — detik 1 desimal. */
 function formatDMS(v: number, sumbu: "lat" | "lng"): string {
-  const hemi = sumbu === "lat" ? (v < 0 ? "S" : "N") : (v < 0 ? "W" : "E");
+  const hemi = sumbu === "lat" ? (v < 0 ? "LS" : "LU") : (v < 0 ? "BB" : "BT");
   const a = Math.abs(v);
   let d = Math.floor(a);
   let m = Math.floor((a - d) * 60);
-  let s = Math.round(((a - d) * 60 - m) * 60);
-  if (s === 60) {
+  let s = Math.round(((a - d) * 60 - m) * 10) / 10; // detik 1 desimal
+  if (s >= 60) {
     s = 0;
     m += 1;
   }
-  if (m === 60) {
+  if (m >= 60) {
     m = 0;
     d += 1;
   }
-  return `${d}°${m}'${s}"${hemi}`;
+  const sTeks = s.toFixed(1);
+  return `${d}°${m}'${sTeks}"${hemi}`;
 }
 
 /** Foto yang ditempel ke sheet layout: posisi % pusat, lebar px, rasio aspek asli. */
@@ -395,8 +397,14 @@ export default function LayoutView() {
     const kiri = 54;
     const atas = 104;
     const bawah = 88;
+    // chip label horizontal (atas/bawah) — teks biru ala peta topografi
     const chip = (teks: string, style: string) =>
-      `<div style="position:absolute;background:#fff;border:1px solid #64748b;border-radius:3px;padding:0 3px;font:600 8px/13px ui-sans-serif,system-ui,sans-serif;color:#0f172a;white-space:nowrap;${style}">${teks}</div>`;
+      `<div style="position:absolute;background:#fff;border:1px solid #64748b;border-radius:3px;padding:0 3px;font:600 8px/13px ui-sans-serif,system-ui,sans-serif;color:#1d4ed8;white-space:nowrap;${style}">${teks}</div>`;
+    // chip VERTIKAL (kiri/kanan): pembungkus titik-nol di titik jangkar, chip di dalamnya
+    // dipusatkan ke jangkar lalu diputar -90° → teks terbaca dari bawah ke atas (ala referensi)
+    const chipV = (teks: string, cx: number, cy: number) =>
+      `<div style="position:absolute;left:${cx}px;top:${cy}px;width:0;height:0">` +
+      `<div style="position:absolute;background:#fff;border:1px solid #64748b;border-radius:3px;padding:0 3px;font:600 8px/13px ui-sans-serif,system-ui,sans-serif;color:#1d4ed8;white-space:nowrap;transform:translate(-50%,-50%) rotate(-90deg)">${teks}</div></div>`;
     const peringatan = (teks: string) =>
       chip(teks, `left:${W / 2}px;top:${atas - 14}px;transform:translateX(-50%);background:#fff7ed;border-color:#fdba74;color:#9a3412`);
     try {
@@ -433,8 +441,9 @@ export default function LayoutView() {
         garisHtml += `<div style="position:absolute;left:0;top:${y - 1}px;width:8px;height:2px;background:#0f172a"></div>`;
         garisHtml += `<div style="position:absolute;right:0;top:${y - 1}px;width:8px;height:2px;background:#0f172a"></div>`;
         const lb = formatDMS(lat, "lat");
-        labelHtml += chip(lb, `right:${W - kiri + 3}px;top:${atas + y}px;transform:translateY(-50%)`);
-        labelHtml += chip(lb, `left:${W - kiri + 3}px;top:${atas + y}px;transform:translateY(-50%)`);
+        // kiri & kanan: label VERTIKAL (rotasi -90°, terbaca dari bawah ke atas — gaya referensi)
+        labelHtml += chipV(lb, kiri - 9, atas + y);
+        labelHtml += chipV(lb, W - kiri + 9, atas + y);
       }
       gL.innerHTML = garisHtml;
       lL.innerHTML = labelHtml;

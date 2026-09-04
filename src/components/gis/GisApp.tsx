@@ -24,6 +24,7 @@ import {
 } from "./dialogs/ProyekDialogs";
 import { useGis } from "@/lib/gis/store";
 import { bacaPerf } from "@/lib/gis/proyek";
+import { toast } from "sonner";
 
 // Leaflet & three.js hanya jalan di browser — matikan SSR untuk kedua tampilan ini
 const MapCanvas = dynamic(() => import("./MapCanvas"), { ssr: false });
@@ -40,6 +41,48 @@ export default function GisApp() {
   useEffect(() => {
     const perf = bacaPerf();
     if (perf) useGis.getState().setPerf(perf);
+  }, []);
+
+  // ---------- Salin & tempel fitur: Ctrl+C / Ctrl+V (ala CAD) ----------
+  // Abaikan bila fokus ada di input/textarea/dropdown atau di dalam dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k !== "c" && k !== "v") return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable ||
+          t.closest?.('[role="dialog"],[role="alertdialog"]'))
+      )
+        return;
+      e.preventDefault();
+      if (k === "c") {
+        const n = useGis.getState().salinTerpilih();
+        if (n.titik + n.bentuk === 0) {
+          toast.info("Tidak ada fitur terpilih", { description: "Pilih dulu: klik fitur, pakai Blok, atau centang di Tabel Data." });
+          return;
+        }
+        toast.success(`${n.titik + n.bentuk} fitur disalin`, {
+          description: `${n.titik} titik + ${n.bentuk} poligon/garis. Tekan Ctrl+V atau tombol Tempel untuk menduplikasi.`,
+        });
+      } else {
+        const n = useGis.getState().tempelClipboard();
+        if (!n) {
+          toast.info("Papan klip masih kosong", { description: "Salin dulu fitur yang terpilih dengan Ctrl+C atau tombol Salin." });
+          return;
+        }
+        toast.success(`${n.titik + n.bentuk} fitur ditempel`, {
+          description: `${n.titik} titik + ${n.bentuk} poligon/garis diletakkan di tengah tampilan peta — semuanya langsung terpilih.`,
+        });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   return (

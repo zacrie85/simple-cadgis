@@ -7,11 +7,20 @@ import { ParseStream } from "@/lib/gis/parse-client";
 import { isiElevasiKosong } from "@/lib/gis/elevasi";
 import { bersihkanDeskripsiHtml } from "@/lib/gis/htmlDesc";
 import { parseKolomKoordinat, uid } from "@/lib/gis/geo";
+import {
+  parseGpx,
+  parseDxf,
+  dxfSudahDerajat,
+  dxfKeFitur,
+  buatKonversiUtm,
+  type FiturGpxDxf,
+  type DxfEntitas,
+} from "@/lib/gis/gpxdxf";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
 import { toast } from "sonner";
-import { Upload, Loader2, CheckCircle2, FileSpreadsheet } from "lucide-react";
+import { Upload, Loader2, CheckCircle2, FileSpreadsheet, Info } from "lucide-react";
 
-type Fase = "pilih" | "proses" | "peta-kolom" | "selesai";
+type Fase = "pilih" | "proses" | "peta-kolom" | "selesai" | "crs-dxf" | "dwg";
 
 interface ProgresInfo {
   bytes: number;
@@ -27,9 +36,15 @@ export default function ImportDialog() {
 
   const [fase, setFase] = useState<Fase>("pilih");
   const [namaFile, setNamaFile] = useState("");
-  const [jenis, setJenis] = useState<"tabel" | "kml">("tabel");
+  const [jenis, setJenis] = useState<"tabel" | "kml" | "gpx" | "dxf" | "dwg">("tabel");
   const [progres, setProgres] = useState<ProgresInfo>({ bytes: 0, total: 0 });
   const [pesanProses, setPesanProses] = useState("");
+  // CRS DXF: sebagian besar file CAD memakai meter UTM (bukan derajat) — pilih zona sebelum impor
+  const [utaZona, setUtaZona] = useState(49);
+  const [utaHemi, setUtaHemi] = useState<"N" | "S">("S");
+  const [dxfSampel, setDxfSampel] = useState("");
+  const dxfEntitasRef = useRef<DxfEntitas[]>([]);
+  const dxfNamaFileRef = useRef("");
 
   const semuaRowsRef = useRef<string[][]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -143,11 +158,172 @@ export default function ImportDialog() {
       setModeKoordinat("gabungan");
       fiturRef.current = { points: [], shapes: [] };
       setIsiElevMode("sekarang");
+      dxfEntitasRef.current = [];
+      setDxfSampel("");
     }, 200);
   }, [setDialog]);
 
+  // ==================== GPX / DXF / DWG (Task 31) ====================
+
+  /** Tambahkan fitur hasil parse GPX/DXF ke peta (layer baru + batch bertahap). */
+  const tandaiFiturCad = (fitur: FiturGpxDxf, sumber: "gpx" | "dxf", namaFormat: string, namaImpor: string) => {
+    const st = useGis.getState();
+    // pakai nama file dari PARAMETER (state React bisa stale di callback async)
+    const namaLayer = namaLayerDariFile(namaImpor || namaFile);
+    const layerId = st.tambahLayer(namaLayer);
+    const pts: GisPoint[] = fitur.points.map((p, i) => ({
+      id: uid("titik"),
+      lat: p.lat,
+      lng: p.lng,
+      title: p.name || `Titik ${i + 1}`,
+      description: p.desc,
+      elevation: p.ele,
+      attrs: p.attrs,
+      source: sumber,
+      visible: true,
+      layerId,
+    }));
+    const shps: GisShape[] = fitur.shapes.map((sh, i) => ({
+      id: uid("shape"),
+      kind: sh.kind,
+      vertices: sh.vertices,
+      title: sh.name || `${sh.kind === "closed" ? "Poligon" : "Garis"} ${i + 1}`,
+      description: sh.desc,
+      color: sh.kind === "closed" ? "#f59e0b" : "#10b981",
+      attrs: sh.attrs,
+      source: sumber,
+      visible: true,
+      layerId,
+    }));
+    for (const lb of fitur.labels) {
+      st.addLabel({ id: uid("label"), lat: lb.lat, lng: lb.lng, text: lb.text, layerId });
+    }
+    const total = pts.length + shps.length + fitur.labels.length;
+    if (total === 0) {
+      toast.error(`Tidak ada fitur terbaca dari file ${namaFormat}`, {
+        description: "Periksa isi file — mungkin kosong atau format tidak dikenal.",
+      });
+      setFase("pilih");
+      return;
+    }
+    // titik besar ditambah bertahap agar UI tetap responsif
+    const ukuranBatch = 2000;
+    let i = 0;
+    const tambahBertahap = () => {
+      st.addPoints(pts.slice(i, i + ukuranBatch));
+      i += ukuranBatch;
+      if (i < pts.length) {
+        setTimeout(tambahBertahap, 0);
+        return;
+      }
+      for (const sh of shps) st.addShape(sh);
+      toast.success(`Impor ${namaFormat} berhasil`, {
+        description: `${pts.length.toLocaleString("id-ID")} titik + ${shps.length.toLocaleString("id-ID")} poligon/garis${fitur.labels.length ? ` + ${fitur.labels.length.toLocaleString("id-ID")} teks` : ""} pada layer "${namaLayer}".`,
+      });
+      fitData();
+      setFase("selesai");
+      setTimeout(tutup, 600);
+    };
+    tambahBertahap();
+  };
+
+  const mulaiGpx = (file: File) => {
+    setNamaFile(file.name);
+    setJenis("gpx");
+    setFase("proses");
+    setProgres({ bytes: file.size * 0.5, total: file.size });
+    file
+      .text()
+      .then((teks) => {
+        setProgres({ bytes: file.size, total: file.size });
+        const fitur = parseGpx(teks);
+        tandaiFiturCad(fitur, "gpx", "GPX", file.name);
+      })
+      .catch((e) => {
+        toast.error("Gagal membaca GPX", { description: e instanceof Error ? e.message : String(e) });
+        setFase("pilih");
+      });
+  };
+
+  const imporDxfDenganCrs = () => {
+    const conv = buatKonversiUtm(utaZona, utaHemi);
+    const fitur = dxfKeFitur(dxfEntitasRef.current, conv);
+    tandaiFiturCad(fitur, "dxf", "DXF", dxfNamaFileRef.current);
+  };
+
+  const mulaiDxf = (file: File) => {
+    setNamaFile(file.name);
+    setJenis("dxf");
+    setFase("proses");
+    setProgres({ bytes: file.size * 0.5, total: file.size });
+    file
+      .text()
+      .then((teks) => {
+        setProgres({ bytes: file.size, total: file.size });
+        const hasil = parseDxf(teks);
+        if (hasil.biner) {
+          toast.error("File DXF biner belum didukung", {
+            description: "Simpan ulang dari AutoCAD/CAD: SAVEAS → pilih 'AutoCAD DXF' versi biasa (ASCII), bukan Binary DXF.",
+          });
+          setFase("pilih");
+          return;
+        }
+        if (hasil.entitas.length === 0) {
+          toast.error("Tidak ada entitas terbaca", {
+            description: "File .dxf tidak berisi POINT/LINE/POLYLINE/CIRCLE/ARC/TEXT yang dikenali.",
+          });
+          setFase("pilih");
+          return;
+        }
+        dxfEntitasRef.current = hasil.entitas;
+        dxfNamaFileRef.current = file.name;
+        if (dxfSudahDerajat(hasil.entitas)) {
+          // koordinat sudah derajat (lat/lng) — langsung impor tanpa pilihan CRS
+          const fitur = dxfKeFitur(hasil.entitas, (x, y) => ({ lat: y, lng: x }));
+          toast.info("Koordinat DXF terbaca sebagai derajat WGS84", {
+            description: "Angka koordinat berada dalam rentang lintang/bujur — langsung dipetakan. Jika posisi meleset, ulangi impor dan pilih zona UTM.",
+          });
+          tandaiFiturCad(fitur, "dxf", "DXF", file.name);
+          return;
+        }
+        // koordinat meter (umumnya UTM) — minta zona dulu
+        const sampelE = hasil.entitas.find((e) => e.jenis === "titik") ?? hasil.entitas[0];
+        const koord = (x: number, y: number) => `X ${x.toLocaleString("id-ID", { maximumFractionDigits: 2 })}, Y ${y.toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
+        let contoh = "";
+        if (sampelE.jenis === "titik") contoh = koord(sampelE.x, sampelE.y);
+        else if (sampelE.jenis === "garis") contoh = koord(sampelE.a[0], sampelE.a[1]);
+        else if (sampelE.jenis === "poly") contoh = sampelE.pts[0] ? koord(sampelE.pts[0][0], sampelE.pts[0][1]) : "";
+        else if (sampelE.jenis === "lingkaran" || sampelE.jenis === "busur") contoh = koord(sampelE.cx, sampelE.cy);
+        else if (sampelE.jenis === "teks") contoh = koord(sampelE.x, sampelE.y);
+        setDxfSampel(contoh);
+        setFase("crs-dxf");
+      })
+      .catch((e) => {
+        toast.error("Gagal membaca DXF", { description: e instanceof Error ? e.message : String(e) });
+        setFase("pilih");
+      });
+  };
+
+  const mulaiDwg = () => {
+    setNamaFile(".dwg");
+    setJenis("dwg");
+    setFase("dwg");
+  };
+
   const mulaiParse = (file: File) => {
     const nama = file.name.toLowerCase();
+    if (nama.endsWith(".dwg")) {
+      mulaiDwg();
+      return;
+    }
+    if (nama.endsWith(".dxf")) {
+      mulaiDxf(file);
+      return;
+    }
+    if (nama.endsWith(".gpx")) {
+      mulaiGpx(file);
+      return;
+    }
     const isKml = nama.endsWith(".kml") || nama.endsWith(".kmz");
     setNamaFile(file.name);
     setJenis(isKml ? "kml" : "tabel");
@@ -362,7 +538,7 @@ export default function ImportDialog() {
   };
 
   return (
-    <FloatingWindow judul="Impor Data — Excel / CSV / KML / KMZ" onClose={tutup} lebar="max-w-3xl w-[min(94vw,56rem)]">
+    <FloatingWindow judul="Impor Data — Excel / CSV / KML / KMZ / GPX / DXF / DWG" onClose={tutup} lebar="max-w-3xl w-[min(94vw,56rem)]">
       {fase === "pilih" && (
         <div>
           <div
@@ -384,16 +560,16 @@ export default function ImportDialog() {
             </div>
             <p className="font-semibold text-slate-800">Klik pilih file atau seret ke sini</p>
             <p className="text-sm text-slate-500">
-              Mendukung <b>.xlsx</b> <b>.csv</b> <b>.kml</b> <b>.kmz</b> — hingga <b>250 MB</b>
+              Mendukung <b>.xlsx</b> <b>.csv</b> <b>.kml</b> <b>.kmz</b> <b>.gpx</b> <b>.dxf</b> <b>.dwg</b> — hingga <b>250 MB</b>
             </p>
             <p className="text-xs text-slate-400">
-              File besar diproses terpecah-pecah (streaming) agar aplikasi tidak hang
+              GPX & DXF dibaca langsung • DWG biner diberi panduan konversi ke DXF
             </p>
           </div>
           <input
             ref={inputRef}
             type="file"
-            accept=".xlsx,.xlsm,.csv,.txt,.kml,.kmz"
+            accept=".xlsx,.xlsm,.csv,.txt,.kml,.kmz,.gpx,.dxf,.dwg"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -401,6 +577,101 @@ export default function ImportDialog() {
               e.target.value = "";
             }}
           />
+        </div>
+      )}
+
+      {fase === "dwg" && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 border border-amber-200 p-3.5">
+            <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold">DWG adalah format biner proprietary AutoCAD</p>
+              <p className="mt-1 text-amber-800">
+                Sama seperti ECW, browser tidak punya pembaca DWG (format tertutup, lisensi tertutup).
+                Jalurnya: konversi dulu ke <b>DXF</b> — sekali konversi, semua fiturnya bisa diimpor di sini.
+              </p>
+            </div>
+          </div>
+          <ol className="list-decimal ml-5 space-y-2 text-sm text-slate-700">
+            <li>
+              <b>Dari AutoCAD / BricsCAD / ZwCAD:</b> buka file .dwg → <code className="rounded bg-slate-100 px-1">SAVEAS</code> →
+              pilih tipe <b>"AutoCAD DXF (*.dxf)"</b> (versi R12/R2000+) → simpan.
+            </li>
+            <li>
+              <b>Gratis tanpa AutoCAD:</b> unduh <b>ODA File Converter</b> (opendesign.com) — pilih input .dwg, output .dxf (ASCII).
+              Alternatif lain: QGIS (layer → ekspor DXF) atau LibreCAD.
+            </li>
+            <li>Kembali ke sini → impor file .dxf hasil konversi (koordinat meter UTM akan ditanya zonanya).</li>
+          </ol>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setFase("pilih")} className="rounded-xl border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">
+              Kembali
+            </button>
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700"
+            >
+              Sudah punya DXF — impor sekarang
+            </button>
+          </div>
+        </div>
+      )}
+
+      {fase === "crs-dxf" && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-emerald-800">
+                {dxfEntitasRef.current.length.toLocaleString("id-ID")} entitas DXF terbaca dari {namaFile}
+              </p>
+              <p className="text-emerald-600 text-xs mt-0.5">
+                Koordinatnya dalam SATUAN METER (bukan derajat) — umumnya proyeksi UTM. Pilih zona UTM agar posisi tepat di peta.
+              </p>
+              {dxfSampel && <p className="text-xs text-slate-500 mt-1">Contoh koordinat: <code className="rounded bg-white px-1 py-0.5 border border-slate-200">{dxfSampel}</code></p>}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Zona UTM</label>
+              <select
+                value={utaZona}
+                onChange={(e) => setUtaZona(parseInt(e.target.value, 10))}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-400"
+              >
+                {Array.from({ length: 60 }, (_, i) => i + 1).map((z) => (
+                  <option key={z} value={z}>Zone {z}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1">Indonesia: zona 46 (barat) s.d. 54 (Papua). Semarang/Jateng = 49S.</p>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Hemisfer</label>
+              <div className="mt-1 flex gap-4 text-sm">
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" checked={utaHemi === "S"} onChange={() => setUtaHemi("S")} />
+                  Selatan (S)
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" checked={utaHemi === "N"} onChange={() => setUtaHemi("N")} />
+                  Utara (N)
+                </label>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Indonesia = hemisfer selatan (Y ± 9 juta m).</p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setFase("pilih")} className="rounded-xl border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">
+              Batal
+            </button>
+            <button
+              onClick={imporDxfDenganCrs}
+              className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700 flex items-center gap-1.5"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Konversi & Tambahkan ke Peta
+            </button>
+          </div>
         </div>
       )}
 

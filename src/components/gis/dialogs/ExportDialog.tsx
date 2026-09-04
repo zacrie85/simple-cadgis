@@ -5,6 +5,7 @@ import { useGis } from "@/lib/gis/store";
 import { bangunKML, kmlKeKmz, kmlString } from "@/lib/gis/kml";
 import { shapefileZip } from "@/lib/gis/shapefile";
 import { excelZip, excelTabel } from "@/lib/gis/excelExport";
+import { bangunGpx, bangunDxf } from "@/lib/gis/gpxdxf";
 import { unduhBlob, stempelWaktu } from "@/lib/gis/download";
 import { titikDalamPoligon } from "@/lib/gis/geo";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
@@ -13,10 +14,10 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Download, FileArchive, FileSpreadsheet, Map } from "lucide-react";
+import { Download, FileArchive, FileSpreadsheet, Map, FileDigit, Box } from "lucide-react";
 
 type Target = "titik" | "bentuk" | "tabel";
-type Format = "kmz" | "xlsx" | "shp";
+type Format = "kmz" | "xlsx" | "shp" | "gpx" | "dxf";
 
 export default function ExportDialog() {
   const open = useGis((s) => s.dialogs.export);
@@ -55,6 +56,30 @@ export default function ExportDialog() {
       const ts = stempelWaktu();
       const pilih = filterPoints();
       const bentuk = filterShapes();
+
+      // ---------- GPX & DXF: semua target diekspor gabungan (titik + bentuk + label) ----------
+      if (format === "gpx" || format === "dxf") {
+        if (pilih.length + bentuk.length === 0) {
+          toast.error("Tidak ada data untuk diekspor");
+          return;
+        }
+        const labels = useGis.getState().labels;
+        const namaDok = `SIMPLE-CADGIS-${target === "titik" ? "Titik" : target === "bentuk" ? "Bentuk" : "Tabel"}-${ts}`;
+        if (format === "gpx") {
+          const gpx = bangunGpx({ points: pilih, shapes: bentuk, labels, namaDok });
+          unduhBlob(gpx, `${namaDok}.gpx`, "application/gpx+xml");
+          toast.success(`${pilih.length + bentuk.length} fitur diekspor ke GPX`, {
+            description: `${pilih.length} titik (wpt) + ${bentuk.length} poligon/garis (track). Koordinat WGS84 siap dipakai GPS/Garmin/QGIS.`,
+          });
+        } else {
+          const dxf = bangunDxf({ points: pilih, shapes: bentuk, labels });
+          unduhBlob(dxf, `${namaDok}.dxf`, "application/dxf");
+          toast.success(`${pilih.length + bentuk.length} fitur diekspor ke DXF`, {
+            description: "Koordinat derajat WGS84 (x=bujur, y=lintang) — ter-georeferensi & bisa diimpor balik di sini. Titik + polyline terbaca di AutoCAD/QGIS.",
+          });
+        }
+        return;
+      }
 
       if (target === "titik") {
         if (pilih.length === 0) {
@@ -212,7 +237,18 @@ export default function ExportDialog() {
                 <Map className="h-5 w-5 text-blue-600" />
                 <span className="text-xs font-medium">SHP (zip)</span>
               </Button>
+              <Button variant="outline" className="rounded-xl h-auto py-3 flex-col gap-1" onClick={() => ekspor("gpx")} title="GPS Exchange Format — untuk GPS handheld, Garmin, Basecamp, QGIS">
+                <FileDigit className="h-5 w-5 text-violet-600" />
+                <span className="text-xs font-medium">GPX</span>
+              </Button>
+              <Button variant="outline" className="rounded-xl h-auto py-3 flex-col gap-1" onClick={() => ekspor("dxf")} title="Drawing Exchange Format — untuk AutoCAD/BricsCAD/QGIS (derajat WGS84)">
+                <Box className="h-5 w-5 text-sky-600" />
+                <span className="text-xs font-medium">DXF</span>
+              </Button>
             </div>
+            <p className="text-[10px] text-slate-400">
+              GPX & DXF menggabungkan titik + poligon/garis + teks sesuai cakupan. DWG tidak tersedia untuk ekspor — pakai DXF (AutoCAD bisa membukanya langsung).
+            </p>
           </div>
         </div>
       </DialogContent>

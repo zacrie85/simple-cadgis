@@ -155,6 +155,10 @@ interface GisStore {
   setSelection: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
+  /** Papan klip internal: salinan fitur terpilih (titik + bentuk) — tempel = duplikasi. */
+  clipboard: { points: GisPoint[]; shapes: GisShape[] };
+  salinTerpilih: () => { titik: number; bentuk: number };
+  tempelClipboard: () => { titik: number; bentuk: number } | null;
   /** Tambah titik ke urutan poligon "Dari Titik" (abaikan bila bukan titik / sudah ada). */
   tambahUrutanPoligon: (id: string) => void;
   /** Ganti seluruh urutan poligon sekaligus (batch — hindari puluhan update beruntun). */
@@ -526,6 +530,64 @@ export const useGis = create<GisStore>((set, get) => ({
         : [...st.selection, id],
     })),
   clearSelection: () => set({ selection: [] }),
+
+  // ---------- Papan klip: salin & tempel fitur (Ctrl+C / Ctrl+V ala CAD) ----------
+  clipboard: { points: [], shapes: [] },
+  salinTerpilih: () => {
+    const s = get();
+    const ids = new Set(s.selection);
+    const pts = s.points.filter((p) => ids.has(p.id));
+    const shps = s.shapes.filter((sh) => ids.has(sh.id));
+    if (pts.length + shps.length === 0) return { titik: 0, bentuk: 0 };
+    // salinan mendalam (JSON aman: data murni — tanpa referensi DOM/blob)
+    set({ clipboard: { points: JSON.parse(JSON.stringify(pts)) as GisPoint[], shapes: JSON.parse(JSON.stringify(shps)) as GisShape[] } });
+    return { titik: pts.length, bentuk: shps.length };
+  },
+  tempelClipboard: () => {
+    const s = get();
+    const { points, shapes } = s.clipboard;
+    if (points.length + shapes.length === 0) return null;
+    // tempel di tengah tampilan peta: pusat bbox salinan → pusat view sekarang
+    const semua = [
+      ...points.map((p) => [p.lat, p.lng] as [number, number]),
+      ...shapes.flatMap((sh) => sh.vertices.map((v) => [v.lat, v.lng] as [number, number])),
+    ];
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+    for (const [la, lo] of semua) {
+      if (la < minLat) minLat = la;
+      if (la > maxLat) maxLat = la;
+      if (lo < minLng) minLng = lo;
+      if (lo > maxLng) maxLng = lo;
+    }
+    const dLat = (s.mapView.lat - (minLat + maxLat) / 2);
+    const dLng = (s.mapView.lng - (minLng + maxLng) / 2);
+    const layerManual = s.pastikanLayerManual();
+    const ptBaru = points.map((p) => ({
+      ...p,
+      id: uid("titik"),
+      lat: p.lat + dLat,
+      lng: p.lng + dLng,
+      visible: true,
+      layerId: p.layerId && s.layers.some((l) => l.id === p.layerId) ? p.layerId : layerManual,
+    }));
+    const shBaru = shapes.map((sh) => ({
+      ...sh,
+      id: uid("shape"),
+      vertices: sh.vertices.map((v) => ({ lat: v.lat + dLat, lng: v.lng + dLng })),
+      visible: true,
+      layerId: sh.layerId && s.layers.some((l) => l.id === sh.layerId) ? sh.layerId : layerManual,
+    }));
+    const idBaru = [...ptBaru.map((p) => p.id), ...shBaru.map((sh) => sh.id)];
+    set((st) => ({
+      points: [...st.points, ...ptBaru],
+      shapes: [...st.shapes, ...shBaru],
+      selection: idBaru,
+    }));
+    return { titik: ptBaru.length, bentuk: shBaru.length };
+  },
   tambahUrutanPoligon: (id) =>
     set((st) => {
       if (!st.points.some((p) => p.id === id)) return st; // bukan titik

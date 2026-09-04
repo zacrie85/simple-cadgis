@@ -58,3 +58,8 @@ tool-results/
 download/*.xlsx
 download/*.kmz
 download/*.shp
+
+# cache & file lokal
+__pycache__/
+*.pyc
+upload/

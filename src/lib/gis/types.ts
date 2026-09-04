@@ -43,7 +43,7 @@ export interface GisPoint {
   photo?: string; // dataURL foto
   elevation?: number | null; // ketinggian (meter) — dipakai kontur & volume
   attrs: Record<string, string>; // atribut tambahan dari impor
-  source: "manual" | "excel" | "csv" | "kml";
+  source: "manual" | "excel" | "csv" | "kml" | "gpx" | "dxf";
   visible: boolean;
   labelTampil?: boolean; // tanda: label nama titik ini tampil pada mode "terpilih"
   layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
@@ -58,7 +58,7 @@ export interface GisShape {
   description: string;
   color: string;
   attrs: Record<string, string>;
-  source: "manual" | "kml";
+  source: "manual" | "kml" | "gpx" | "dxf";
   visible: boolean;
   labelTampil?: boolean; // tanda: label nama bentuk ini tampil pada mode "terpilih"
   layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
