@@ -839,3 +839,21 @@ Work Log:
 Stage Summary:
 - FITUR BARU menu GAMBAR › TEKS: (1) pilihan arah tulisan Horizontal/Vertikal per label; (2) mode Teks Pendek vs Paragraf multi-baris (Enter = baris baru, tersusun ke bawah, putus otomatis maks 360px); (3) resize manual dua cara — tarik pegangan biru di pojok kanan-bawah label langsung di peta (pratinjau live, persisten) atau slider/A± di dialog edit; semua tersimpan di proyek & ikut tampil di layout cetak; kompatibel mundur dgn label lama.
 - Rilis v1.7.0 (tag) MENUNGGU konfirmasi user setelah uji di Pages.
+
+---
+Task ID: 38-rilis
+Agent: Super Z (main)
+Task: Rilis v1.7.0 setelah konfirmasi user ("BERHASIL KAWAN") — fitur GAMBAR › TEKS (arah Horizontal/Vertikal, mode Pendek vs Paragraf, resize manual)
+
+Work Log:
+- Cek state: HEAD e88eef8 (fitur TEKS, SW v11, versi 1.7.0) sudah ter-push; remote main = HEAD; working tree hanya noise chmod (mode 644→755, 0 diff isi) → git checkout -- . bersih.
+- git tag -a v1.7.0 + push main & tag (token redacted di log).
+- CI: "Deploy ke GitHub Pages" (main) → success (sebelumnya, 04:30Z); "Build Installer Desktop (Windows)" (v1.7.0) → in_progress ±7 menit → completed success (poll 7x).
+- Verifikasi Pages: sw.js live = simplecadgis-v11, index HTTP 200.
+- Verifikasi release via API: "SIMPLE CADGIS v1.7.0", draft=false, prerelease=false, aset SIMPLE-CADGIS-Setup-1.7.0.exe 197.662.871 byte state=uploaded.
+- Uji unduhan: HEAD anonim 302→200 content-length cocok; range 0-63 → HTTP 206, byte pertama 4d 5a ("MZ", PE valid). Catatan: request dengan Authorization header di-follow redirect → S3 balas 401 (token GitHub tidak boleh diteruskan ke objects.githubusercontent.com); unduhan anonim benar.
+
+Stage Summary:
+- RILIS v1.7.0 SELESAI & TERVERIFIKASI: Pages live (SW v11) + installer SIMPLE-CADGIS-Setup-1.7.0.exe (~189 MB) di GitHub Releases.
+- Isi rilis: GAMBAR › TEKS — arah tulisan Horizontal/Vertikal pilihan manual; mode Teks Pendek vs Paragraf (Enter = baris baru, tersusun ke bawah, putus otomatis maks 360px); resize manual dua cara (pegangan biru pojok kanan-bawah label di peta + slider/A± di dialog); ukuran persisten 8–144px; ikut layout cetak; kompatibel mundur.
+- Pengingat berulang: token ghp_... perlu di-revoke user.
