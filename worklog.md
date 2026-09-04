@@ -920,3 +920,21 @@ Work Log:
 Stage Summary:
 - FITUR BARU: transparansi isi bisa diatur per bentuk — slider bebas 0–100% + preset cepat (Bawaan/30/50/75/Solid) di dialog Simpan & Edit Gambar; berlaku untuk Poligon, Kotak, Bulatan, Elips di PETA dan ANOTASI LAYOUT (chip anotasi punya pilihan Isi); nilai tersimpan di proyek & anotasi, ikut cetak/PDF/PNG, kompatibel mundut.
 - Rilis v1.8.0 (tag) MENUNGGU konfirmasi user — akan mencakup Task 39+40+41.
+
+---
+Task ID: 41-rilis
+Agent: Super Z (main)
+Task: Rilis v1.8.0 (Task 39 + 40 + 41) — tag, push, verifikasi Pages & Installer
+
+Work Log:
+- Konfirmasi user "berhasil" utk Task 41 (transparansi isi) → lanjut rilis.
+- State: main = 074beec (3 fitur commit: 2c8fd4e Task 39, 169425d Task 40, 074beec Task 41), package.json 1.8.0, SW v14. Remote main ternyata SUDAH di-push di sesi sblm (local origin/main ref basi); yang kurang hanya tag.
+- git tag -a v1.8.0 + push tag (token di-redact). Verifikasi fetch: origin/main == HEAD (0 commit tertinggal).
+- CI: Deploy Pages (074beec) success; Build Installer (v1.8.0) in_progress → polling 11x45s → completed success.
+- Live Pages: sw.js CACHE = simplecadgis-v14 ✓.
+- Release API: "SIMPLE CADGIS v1.8.0" published, asset SIMPLE-CADGIS-Setup-1.8.0.exe 197.685.976 bytes uploaded.
+- Verifikasi unduh ANONIM: HEAD 302 → GET ranged 1 MB → header "MZ" valid (exe sah). (Jangan pakai Authorization saat ikut redirect S3 — 401.)
+
+Stage Summary:
+- RILIS v1.8.0 BERHASIL: Pages live (SW v14) + installer exe terverifikasi. Isi rilis: Titik Terdekat; GAMBAR›Panah; alat GAMBAR jadi anotasi di Layout; GAMBAR›Kotak 2-klik; transparansi isi bentuk 0-100% s/d solid.
+- Token PAT lama tetap disarankan di-revoke owner.
