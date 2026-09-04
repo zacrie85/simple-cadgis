@@ -16,6 +16,7 @@ import {
   type FiturGpxDxf,
   type DxfEntitas,
 } from "@/lib/gis/gpxdxf";
+import { crsUtm, deteksiKoordinat, keLatlng, type DeteksiKoord } from "@/lib/gis/crs";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
 import { toast } from "sonner";
 import { Upload, Loader2, CheckCircle2, FileSpreadsheet, Info } from "lucide-react";
@@ -45,6 +46,11 @@ export default function ImportDialog() {
   const [dxfSampel, setDxfSampel] = useState("");
   const dxfEntitasRef = useRef<DxfEntitas[]>([]);
   const dxfNamaFileRef = useRef("");
+  // Deteksi jenis koordinat Excel/CSV (Task 32): derajat / DMS / meter-UTM / proyeksi lain
+  const [deteksiImpor, setDeteksiImpor] = useState<DeteksiKoord | null>(null);
+  const [crsImpor, setCrsImpor] = useState<"derajat" | "utm">("derajat");
+  const [zonaImpor, setZonaImpor] = useState(49);
+  const [hemiImpor, setHemiImpor] = useState<"N" | "S">("S");
 
   const semuaRowsRef = useRef<string[][]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -143,6 +149,35 @@ export default function ImportDialog() {
       }
     }
     setKolomJudul(idxJudul >= 0 ? idxJudul : 0);
+
+    // ---- DETEKSI OTOMATIS jenis koordinat (Task 32): derajat / DMS / meter UTM / lainnya ----
+    const sampelN: { x: number; y: number }[] = [];
+    const adaDms = barisData.slice(0, 50).some((r) => /[°º][\d.,'\s"”′]*\s*(LS|BT|LU|BB|N|S|E|W)\b/i.test(String(r[idxGab >= 0 ? idxGab : 0] ?? "")));
+    for (const r of barisData.slice(0, 60)) {
+      const la = idxLat >= 0 ? parseFloat(String(r[idxLat] ?? "").replace(",", ".")) : NaN;
+      const lo = idxLng >= 0 ? parseFloat(String(r[idxLng] ?? "").replace(",", ".")) : NaN;
+      if (isFinite(la) && isFinite(lo)) sampelN.push({ x: lo, y: la });
+    }
+    if (adaDms && sampelN.length === 0) {
+      setDeteksiImpor({ jenis: "dms", label: "Teks Derajat-Menit-Detik (mis. 6°59'30\"LS) — diubah ke derajat otomatis" });
+      setCrsImpor("derajat");
+      return;
+    }
+    if (sampelN.length >= 3) {
+      const det = deteksiKoordinat(sampelN);
+      setDeteksiImpor(det);
+      if (det.jenis === "meter-utm" || det.jenis === "meter-lain") {
+        // default UTM — zona tetap harus dipilih user (tidak bisa ditebak dari X/Y)
+        setCrsImpor("utm");
+        setZonaImpor(49);
+        setHemiImpor(det.hemi ?? "S");
+      } else {
+        setCrsImpor("derajat");
+      }
+    } else {
+      setDeteksiImpor(null);
+      setCrsImpor("derajat");
+    }
   };
 
   const tutup = useCallback(() => {
@@ -160,6 +195,8 @@ export default function ImportDialog() {
       setIsiElevMode("sekarang");
       dxfEntitasRef.current = [];
       setDxfSampel("");
+      setDeteksiImpor(null);
+      setCrsImpor("derajat");
     }, 200);
   }, [setDialog]);
 
@@ -423,7 +460,25 @@ export default function ImportDialog() {
 
     for (const row of semuaRows) {
       let ll: ReturnType<typeof parseKolomKoordinat> = null;
-      if (modeKoordinat === "gabungan") {
+      if (crsImpor === "utm") {
+        // sumber meter (UTM): X = kolom bujur, Y = kolom lintang (atau gabungan) → konversi ke derajat
+        let x = NaN;
+        let y = NaN;
+        if (modeKoordinat === "gabungan") {
+          const angka = String(ambil(row, kolomGabung)).replace(/[()]/g, "").split(/[,;\t]+|\s{2,}|\s+/).map((v) => parseFloat(v.replace(",", "."))).filter((v) => isFinite(v));
+          if (angka.length >= 2) {
+            x = angka[0];
+            y = angka[1];
+          }
+        } else {
+          x = parseFloat(String(ambil(row, kolomLng)).replace(",", "."));
+          y = parseFloat(String(ambil(row, kolomLat)).replace(",", "."));
+        }
+        if (isFinite(x) && isFinite(y)) {
+          const h = keLatlng(x, y, crsUtm(zonaImpor, hemiImpor));
+          if (isFinite(h.lat) && isFinite(h.lng)) ll = { lat: h.lat, lng: h.lng };
+        }
+      } else if (modeKoordinat === "gabungan") {
         ll = parseKolomKoordinat(ambil(row, kolomGabung));
       } else {
         const la = parseFloat(String(ambil(row, kolomLat)).replace(",", "."));
@@ -745,6 +800,73 @@ export default function ImportDialog() {
               </p>
             )}
           </div>
+
+          {/* ===== Deteksi otomatis sistem koordinat (Task 32) ===== */}
+          {deteksiImpor && (
+            <div
+              className={`rounded-xl border p-3 ${
+                deteksiImpor.jenis === "derajat" || deteksiImpor.jenis === "dms"
+                  ? "bg-emerald-50 border-emerald-200"
+                  : "bg-amber-50 border-amber-300"
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <Info className={`h-4 w-4 mt-0.5 shrink-0 ${deteksiImpor.jenis === "derajat" || deteksiImpor.jenis === "dms" ? "text-emerald-600" : "text-amber-600"}`} />
+                <div className="flex-1 text-sm">
+                  <p className={`font-semibold ${deteksiImpor.jenis === "derajat" || deteksiImpor.jenis === "dms" ? "text-emerald-800" : "text-amber-800"}`}>
+                    Terdeteksi: {deteksiImpor.label}
+                  </p>
+                  {(deteksiImpor.jenis === "meter-utm" || deteksiImpor.jenis === "meter-lain") && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex gap-4 flex-wrap text-sm">
+                        <label className="flex items-center gap-1.5">
+                          <input type="radio" checked={crsImpor === "derajat"} onChange={() => setCrsImpor("derajat")} />
+                          Pakai apa adanya (anggap derajat)
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <input type="radio" checked={crsImpor === "utm"} onChange={() => setCrsImpor("utm")} />
+                          Konversi dari UTM (meter)
+                        </label>
+                      </div>
+                      {crsImpor === "utm" && (
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <select
+                            value={zonaImpor}
+                            onChange={(e) => setZonaImpor(parseInt(e.target.value, 10))}
+                            className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-sm"
+                            aria-label="Zona UTM sumber"
+                          >
+                            {Array.from({ length: 60 }, (_, i) => i + 1).map((z) => (
+                              <option key={z} value={z}>Zona {z}</option>
+                            ))}
+                          </select>
+                          {(["N", "S"] as const).map((h) => (
+                            <label key={h} className="flex items-center gap-1 text-sm">
+                              <input type="radio" checked={hemiImpor === h} onChange={() => setHemiImpor(h)} />
+                              {h}
+                            </label>
+                          ))}
+                          <span className="text-[11px] text-amber-700">
+                            Zona tak bisa ditebak dari X/Y — cek dokumen sumber. Semarang/Jateng = 49S.
+                          </span>
+                        </div>
+                      )}
+                      {deteksiImpor.jenis === "meter-lain" && crsImpor === "derajat" && (
+                        <p className="text-[11px] text-amber-700">
+                          Bukan UTM? Pakai menu <b>Analisis → Konversi</b> untuk CRS lain (kode EPSG: TM-3 = 23830…23864).
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {deteksiImpor.jenis === "derajat" && (
+                    <p className="text-xs text-emerald-700 mt-0.5">
+                      Nilai berada dalam rentang derajat WGS84 — langsung dipetakan tanpa konversi.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3">
             <p className="text-sm font-semibold text-slate-700">Kolom Koordinat</p>

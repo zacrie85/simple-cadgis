@@ -474,8 +474,20 @@ export function dxfKeFitur(entitas: DxfEntitas[], conv: (x: number, y: number) =
  * Bangun DXF R12 ASCII dari data — koordinat derajat WGS84 (x=bujur, y=lintang),
  * sehingga file ter-georeferensi dan bisa diimpor balik ke aplikasi ini.
  */
-export function bangunDxf(opts: { points: GisPoint[]; shapes: GisShape[]; labels?: GisLabel[] }): string {
+export function bangunDxf(opts: {
+  points: GisPoint[];
+  shapes: GisShape[];
+  labels?: GisLabel[];
+  /** Proyeksi keluaran (Task 32): bila ada, koordinat ditulis dalam CRS ini (bukan derajat). */
+  proyeksi?: (ll: LatLng) => { x: number; y: number };
+}): string {
   const { points, shapes, labels = [] } = opts;
+  const proy = opts.proyeksi;
+  const kk = (ll: LatLng): { x: number; y: number; z: (z: number) => number } => {
+    if (!proy) return { x: ll.lng, y: ll.lat, z: (z) => z };
+    const k = proy(ll);
+    return { x: k.x, y: k.y, z: () => 0 };
+  };
   const out: string[] = [];
   const push = (...baris: (string | number)[]) => {
     for (const b of baris) out.push(String(b));
@@ -511,12 +523,13 @@ export function bangunDxf(opts: { points: GisPoint[]; shapes: GisShape[]; labels
   push(0, "SECTION", 2, "ENTITIES");
 
   for (const p of points) {
+    const k = kk(p);
     push(0, "POINT", 8, "CADGIS");
-    push(10, p.lng.toFixed(8), 20, p.lat.toFixed(8), 30, (p.elevation ?? 0).toFixed(3));
+    push(10, k.x.toFixed(5), 20, k.y.toFixed(5), 30, k.z(p.elevation ?? 0).toFixed(3));
     if (p.title) {
       push(0, "TEXT", 8, "CADGIS");
-      push(10, (p.lng + 1e-6).toFixed(8), 20, p.lat.toFixed(8), 30, 0.0);
-      push(40, 0.0008, 1, p.title.slice(0, 250));
+      push(10, (k.x + (proy ? 1 : 1e-6)).toFixed(5), 20, k.y.toFixed(5), 30, 0.0);
+      push(40, proy ? 2 : 0.0008, 1, p.title.slice(0, 250));
     }
   }
 
@@ -525,16 +538,18 @@ export function bangunDxf(opts: { points: GisPoint[]; shapes: GisShape[]; labels
     const verts = sh.kind === "closed" && sh.vertices.length >= 3 ? sh.vertices : sh.vertices;
     push(0, "POLYLINE", 8, layer, 66, 1, 70, sh.kind === "closed" ? 1 : 0);
     for (const v of verts) {
+      const k = kk(v);
       push(0, "VERTEX", 8, layer);
-      push(10, v.lng.toFixed(8), 20, v.lat.toFixed(8), 30, 0.0);
+      push(10, k.x.toFixed(5), 20, k.y.toFixed(5), 30, 0.0);
     }
     push(0, "SEQEND", 8, layer);
   }
 
   for (const lb of labels) {
+    const k = kk(lb);
     push(0, "TEXT", 8, "CADGIS");
-    push(10, lb.lng.toFixed(8), 20, lb.lat.toFixed(8), 30, 0.0);
-    push(40, 0.0008, 1, lb.text.slice(0, 250));
+    push(10, k.x.toFixed(5), 20, k.y.toFixed(5), 30, 0.0);
+    push(40, proy ? 2 : 0.0008, 1, lb.text.slice(0, 250));
   }
 
   push(0, "ENDSEC");

@@ -1,4 +1,4 @@
-import type { GisPoint, GisShape } from "./types";
+import type { GisPoint, GisShape, LatLng } from "./types";
 
 /** Ekspor daftar titik/poligon/garis menjadi file .xlsx multi-sheet. */
 export async function excelZip(
@@ -6,11 +6,16 @@ export async function excelZip(
     points?: GisPoint[];
     shapes?: GisShape[];
     namaSheet?: string;
+    /** Proyeksi keluaran (Task 32): bila ada, kolom X/Y tambahan dalam CRS ini (lat/lng tetap ada). */
+    proyeksi?: (ll: LatLng) => { x: number; y: number };
+    labelCrs?: string;
   },
   namaFile: string
 ): Promise<void> {
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
+  const proy = opts.proyeksi;
+  const sufiks = opts.labelCrs ? ` (${opts.labelCrs})` : "";
 
   if (opts.points) {
     const kunci = new Set<string>();
@@ -20,30 +25,48 @@ export async function excelZip(
       "Keterangan",
       "Latitude",
       "Longitude",
+      ...(proy ? [`X${sufiks}`, `Y${sufiks}`] : []),
       "Ketinggian (m)",
       ...Array.from(kunci),
     ];
-    const baris = opts.points.map((p) => [
-      p.title,
-      p.description,
-      p.lat,
-      p.lng,
-      p.elevation ?? "",
-      ...Array.from(kunci).map((k) => p.attrs[k] ?? ""),
-    ]);
+    const baris = opts.points.map((p) => {
+      const k = proy ? proy({ lat: p.lat, lng: p.lng }) : null;
+      return [
+        p.title,
+        p.description,
+        p.lat,
+        p.lng,
+        ...(proy && k ? [k.x, k.y] : []),
+        p.elevation ?? "",
+        ...Array.from(kunci).map((k2) => p.attrs[k2] ?? ""),
+      ];
+    });
     const ws = XLSX.utils.aoa_to_sheet([header, ...baris]);
     XLSX.utils.book_append_sheet(wb, ws, opts.namaSheet?.slice(0, 30) || "Titik");
   }
 
   if (opts.shapes) {
-    const header = ["Judul", "Jenis", "Keterangan", "Jumlah Titik", "Daftar Titik (lat,lng; ...)"];
-    const baris = opts.shapes.map((s) => [
-      s.title,
-      s.kind === "closed" ? "Poligon" : "Garis",
-      s.description,
-      s.vertices.length,
-      s.vertices.map((v) => `${v.lat},${v.lng}`).join("; "),
-    ]);
+    const header = proy
+      ? ["Judul", "Jenis", "Keterangan", "Jumlah Titik", "Daftar Titik (lat,lng; ...)", `Daftar X/Y${sufiks}`]
+      : ["Judul", "Jenis", "Keterangan", "Jumlah Titik", "Daftar Titik (lat,lng; ...)"];
+    const baris = opts.shapes.map((s) => {
+      const daftarProy = proy
+        ? s.vertices
+            .map((v) => {
+              const k = proy(v);
+              return `${k.x.toFixed(3)},${k.y.toFixed(3)}`;
+            })
+            .join("; ")
+        : null;
+      return [
+        s.title,
+        s.kind === "closed" ? "Poligon" : "Garis",
+        s.description,
+        s.vertices.length,
+        s.vertices.map((v) => `${v.lat},${v.lng}`).join("; "),
+        ...(proy ? [daftarProy] : []),
+      ];
+    });
     const ws = XLSX.utils.aoa_to_sheet([header, ...baris]);
     XLSX.utils.book_append_sheet(wb, ws, "Poligon & Garis");
   }

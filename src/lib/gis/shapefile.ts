@@ -238,8 +238,22 @@ export function shapefileZip(opts: {
   nama: string;
   points?: { p: GisPoint; attrs: Record<string, string | number> }[];
   shapes?: { s: GisShape; attrs: Record<string, string | number> }[];
+  /** Proyeksi keluaran (Task 32): bila ada, geometri ditulis dalam CRS ini (atribut lat/lng tetap WGS84). */
+  proyeksi?: (ll: LatLng) => { x: number; y: number };
+  /** WKT .prj yang sesuai proyeksi (wktPrj dari lib/gis/crs). Kosong = WGS84. */
+  prjWkt?: string | null;
 }): Uint8Array {
   const { nama } = opts;
+  const proy = opts.proyeksi;
+  const proyPoint = (p: GisPoint): GisPoint => {
+    if (!proy) return p;
+    const k = proy({ lat: p.lat, lng: p.lng });
+    return { ...p, lat: k.y, lng: k.x };
+  };
+  const proyShape = (s: GisShape): GisShape => {
+    if (!proy) return s;
+    return { ...s, vertices: s.vertices.map((v) => { const k = proy(v); return { lat: k.y, lng: k.x }; }) };
+  };
   const rekam: ShapeRekam[] = [];
   const baris: Record<string, string | number>[] = [];
   const tipeFile =
@@ -247,7 +261,7 @@ export function shapefileZip(opts: {
 
   if (opts.points) {
     for (const { p, attrs } of opts.points) {
-      rekam.push(rekamDariPoint(p));
+      rekam.push(rekamDariPoint(proyPoint(p)));
       baris.push({
         Judul: p.title,
         Keterangan: p.description,
@@ -260,7 +274,7 @@ export function shapefileZip(opts: {
   }
   if (opts.shapes) {
     for (const { s, attrs } of opts.shapes) {
-      rekam.push(rekamDariShape(s));
+      rekam.push(rekamDariShape(proyShape(s)));
       baris.push({
         Judul: s.title,
         Keterangan: s.description,
@@ -274,7 +288,7 @@ export function shapefileZip(opts: {
   const shp = tulisShp(rekam);
   const shx = tulisShx(rekam);
   const dbf = tulisDbf(baris);
-  const prj = new TextEncoder().encode(PRJ_WGS84);
+  const prj = new TextEncoder().encode(opts.prjWkt ?? PRJ_WGS84);
   void tipeFile;
   return zipSync(
     {

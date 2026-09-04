@@ -8,6 +8,15 @@ import { excelZip, excelTabel } from "@/lib/gis/excelExport";
 import { bangunGpx, bangunDxf } from "@/lib/gis/gpxdxf";
 import { unduhBlob, stempelWaktu } from "@/lib/gis/download";
 import { titikDalamPoligon } from "@/lib/gis/geo";
+import {
+  crsUtm,
+  dariLatlng,
+  hemiDariLat,
+  wktPrj,
+  zonaUtmDariLng,
+  type CrsPilihan,
+} from "@/lib/gis/crs";
+import CrsPicker from "./CrsPicker";
 import type { GisPoint, GisShape } from "@/lib/gis/types";
 // labelMode dibaca imperatif saat ekspor (bukan selector) agar nilai selalu terkini
 import { toast } from "sonner";
@@ -30,6 +39,23 @@ export default function ExportDialog() {
 
   const [target, setTarget] = useState<Target>("titik");
   const [scope, setScope] = useState<"semua" | "pilihan">("semua");
+  // CRS keluaran (Task 32): null = WGS84 derajat (default & standar GPX/KMZ)
+  const [crsKeluaran, setCrsKeluaran] = useState<CrsPilihan | null>(null);
+
+  // saran zona UTM dari pusat data (dihitung saat dialog dibuka)
+  const saranUtm = (() => {
+    const semuaLat = points.map((p) => p.lat);
+    const semuaLng = points.map((p) => p.lng);
+    for (const s of shapes)
+      for (const v of s.vertices) {
+        semuaLat.push(v.lat);
+        semuaLng.push(v.lng);
+      }
+    if (semuaLat.length === 0) return { zona: 49, hemi: "S" as const };
+    const lat = semuaLat.reduce((a, b) => a + b, 0) / semuaLat.length;
+    const lng = semuaLng.reduce((a, b) => a + b, 0) / semuaLng.length;
+    return { zona: zonaUtmDariLng(lng), hemi: hemiDariLat(lat) };
+  })();
 
   if (!open) return null;
 
@@ -56,6 +82,10 @@ export default function ExportDialog() {
       const ts = stempelWaktu();
       const pilih = filterPoints();
       const bentuk = filterShapes();
+      const crs = crsKeluaran;
+      const diproyeksikan = !!crs && crs.jenis !== "geografis" && crs.id !== "dms" && crs.id !== "mgrs";
+      const proy = diproyeksikan && crs ? (ll: { lat: number; lng: number }) => dariLatlng(ll, crs) : undefined;
+      const namaCrs = crs && (diproyeksikan || crs.id === "dms" || crs.id === "mgrs") ? crs.label : "WGS84 derajat";
 
       // ---------- GPX & DXF: semua target diekspor gabungan (titik + bentuk + label) ----------
       if (format === "gpx" || format === "dxf") {
@@ -66,16 +96,21 @@ export default function ExportDialog() {
         const labels = useGis.getState().labels;
         const namaDok = `SIMPLE-CADGIS-${target === "titik" ? "Titik" : target === "bentuk" ? "Bentuk" : "Tabel"}-${ts}`;
         if (format === "gpx") {
+          // GPX = standar WGS84 (spesifikasi GPS) — pilihan CRS lain tidak berlaku di sini
           const gpx = bangunGpx({ points: pilih, shapes: bentuk, labels, namaDok });
           unduhBlob(gpx, `${namaDok}.gpx`, "application/gpx+xml");
           toast.success(`${pilih.length + bentuk.length} fitur diekspor ke GPX`, {
-            description: `${pilih.length} titik (wpt) + ${bentuk.length} poligon/garis (track). Koordinat WGS84 siap dipakai GPS/Garmin/QGIS.`,
+            description: `${pilih.length} titik (wpt) + ${bentuk.length} poligon/garis (track). Standar GPX selalu WGS84 — pakai DXF/Excel untuk CRS lain.`,
           });
         } else {
-          const dxf = bangunDxf({ points: pilih, shapes: bentuk, labels });
+          // DXF mendukung CRS keluaran; DMS/MGRS (teks) tak mungkin di CAD → dipaksa derajat
+          const proyDxf = diproyeksikan && crs ? proy : undefined;
+          const dxf = bangunDxf({ points: pilih, shapes: bentuk, labels, proyeksi: proyDxf });
           unduhBlob(dxf, `${namaDok}.dxf`, "application/dxf");
           toast.success(`${pilih.length + bentuk.length} fitur diekspor ke DXF`, {
-            description: "Koordinat derajat WGS84 (x=bujur, y=lintang) — ter-georeferensi & bisa diimpor balik di sini. Titik + polyline terbaca di AutoCAD/QGIS.",
+            description: diproyeksikan
+              ? `Koordinat dalam ${namaCrs} (meter) — saat impor balik pilih zona yang sama.`
+              : "Koordinat derajat WGS84 (x=bujur, y=lintang) — ter-georeferensi & bisa diimpor balik di sini.",
           });
         }
         return;
@@ -90,14 +125,27 @@ export default function ExportDialog() {
           const kml = bangunKML({ points: pilih, namaDokumen: "Ekspor Titik SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
           unduhBlob(kmlKeKmz(kml, "titik"), `SIMPLE-CADGIS-Titik-${ts}.kmz`, "application/vnd.google-earth.kmz");
         } else if (format === "xlsx") {
-          await excelZip({ points: pilih }, `SIMPLE-CADGIS-Titik-${ts}.xlsx`);
+          await excelZip({ points: pilih, proyeksi: proy, labelCrs: diproyeksikan ? namaCrs : undefined }, `SIMPLE-CADGIS-Titik-${ts}.xlsx`);
         } else {
+          const wkt = crs ? wktPrj(crs) : null;
+          const bisaPrj = !diproyeksikan || !!wkt;
           unduhBlob(
-            shapefileZip({ nama: `SIMPLE-CADGIS-Titik-${ts}`, points: pilih.map((p) => ({ p, attrs: p.attrs })) }),
+            shapefileZip({
+              nama: `SIMPLE-CADGIS-Titik-${ts}`,
+              points: pilih.map((p) => ({ p, attrs: p.attrs })),
+              proyeksi: bisaPrj ? proy : undefined,
+              prjWkt: bisaPrj ? wkt : null,
+            }),
             `SIMPLE-CADGIS-Titik-${ts}.zip`
           );
+          if (!bisaPrj) {
+            toast.warning("SHP tetap WGS84", { description: `Format SHP belum mendukung ${namaCrs} (.prj khusus). Pakai DXF/Excel untuk CRS itu.` });
+            return;
+          }
         }
-        toast.success(`${pilih.length.toLocaleString("id-ID")} titik diekspor ke ${format.toUpperCase()}`);
+        toast.success(`${pilih.length.toLocaleString("id-ID")} titik diekspor ke ${format.toUpperCase()}`, {
+          description: diproyeksikan ? `Koordinat geometri: ${namaCrs}` : format === "xlsx" ? "Kolom Latitude/Longitude WGS84." : undefined,
+        });
         return;
       }
 
@@ -110,14 +158,27 @@ export default function ExportDialog() {
           const kml = bangunKML({ shapes: bentuk, namaDokumen: "Ekspor Poligon SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
           unduhBlob(kmlKeKmz(kml, "bentuk"), `SIMPLE-CADGIS-Poligon-${ts}.kmz`, "application/vnd.google-earth.kmz");
         } else if (format === "xlsx") {
-          await excelZip({ shapes: bentuk }, `SIMPLE-CADGIS-Poligon-${ts}.xlsx`);
+          await excelZip({ shapes: bentuk, proyeksi: proy, labelCrs: diproyeksikan ? namaCrs : undefined }, `SIMPLE-CADGIS-Poligon-${ts}.xlsx`);
         } else {
+          const wkt = crs ? wktPrj(crs) : null;
+          const bisaPrj = !diproyeksikan || !!wkt;
           unduhBlob(
-            shapefileZip({ nama: `SIMPLE-CADGIS-Poligon-${ts}`, shapes: bentuk.map((s) => ({ s, attrs: s.attrs })) }),
+            shapefileZip({
+              nama: `SIMPLE-CADGIS-Poligon-${ts}`,
+              shapes: bentuk.map((s) => ({ s, attrs: s.attrs })),
+              proyeksi: bisaPrj ? proy : undefined,
+              prjWkt: bisaPrj ? wkt : null,
+            }),
             `SIMPLE-CADGIS-Poligon-${ts}.zip`
           );
+          if (!bisaPrj) {
+            toast.warning("SHP tetap WGS84", { description: `Format SHP belum mendukung ${namaCrs} (.prj khusus). Pakai DXF/Excel untuk CRS itu.` });
+            return;
+          }
         }
-        toast.success(`${bentuk.length.toLocaleString("id-ID")} poligon/garis diekspor ke ${format.toUpperCase()}`);
+        toast.success(`${bentuk.length.toLocaleString("id-ID")} poligon/garis diekspor ke ${format.toUpperCase()}`, {
+          description: diproyeksikan ? `Koordinat geometri: ${namaCrs}` : undefined,
+        });
         return;
       }
 
@@ -220,6 +281,21 @@ export default function ExportDialog() {
                 Filter poligon aktif — hanya titik di dalam poligon yang diekspor
               </p>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Sistem koordinat keluaran</Label>
+            <CrsPicker
+              label="Pilih CRS untuk Excel (kolom X/Y), DXF, dan SHP"
+              nilai={crsKeluaran}
+              onChange={setCrsKeluaran}
+              tanpaTeks
+              utmAwal={saranUtm}
+            />
+            <p className="text-[10px] text-slate-400">
+              Default: WGS84 derajat (standar web & GPS). KMZ/GPX selalu WGS84 sesuai spesifikasi.
+              Saran zona UTM dari pusat data: zona {saranUtm.zona}{saranUtm.hemi}.
+            </p>
           </div>
 
           <div className="space-y-1.5">

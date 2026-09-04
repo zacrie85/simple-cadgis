@@ -42,6 +42,7 @@ import {
   Sticker,
   Copy,
   ClipboardPaste,
+  ArrowRightLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { dataContoh } from "@/lib/gis/demo";
@@ -225,6 +226,14 @@ export default function Toolbar() {
     {
       nama: "Analisis",
       items: [
+        {
+          label: "Konversi",
+          icon: ArrowRightLeft,
+          title:
+            "Konversi koordinat — Geografis WGS84 ↔ DMS ↔ MGRS ↔ UTM semua zona ↔ Web Mercator ↔ EPSG apa pun (TM-3, RSO, dll). Satu titik atau batch + unduh CSV",
+          onClick: () => s.setDialog("konversi", true),
+          active: s.dialogs.konversi,
+        },
         { label: "Ukur", icon: Ruler, title: "Ukur jarak antar titik", onClick: () => setTool("measure"), active: s.tool === "measure" },
         { label: "Elevasi DEM", icon: MountainSnow, title: "Isi elevasi otomatis dari DEM satelit — semua titik kosong, atau HANYA titik yang di-blok/terpilih (grid ±90 m)", onClick: () => s.setDialog("elevasi", true), active: s.dialogs.elevasi },
         { label: "Kontur", icon: Mountain, title: "Buat kontur dari titik elevasi", onClick: () => s.setDialog("contour", true), active: s.dialogs.contour },

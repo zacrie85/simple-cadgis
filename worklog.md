@@ -726,3 +726,19 @@ Work Log:
 
 Stage Summary:
 - EMPAT FITUR BARU LIVE DI DEV: (1) label grid DMS vertikal kiri/kanan gaya peta topografi Indonesia; (2) GPX & DXF impor-ekspor penuh + DWG panduan konversi (jalan tengah jujur spt ECW); (3) copy-paste semua fitur via Ctrl+C/V & tombol (seleksi tunggal/blok, tempel di pusat view); (4) radius manual lingkaran 1-klik. Menunggu konfirmasi user → rilis v1.5.0.
+
+---
+Task ID: 32
+Agent: Super Z (main agent)
+Task: Menu konversi koordinat universal + deteksi otomatis jenis koordinat saat impor + pilihan sistem koordinat saat ekspor ("semua jenis koordinat").
+
+Work Log:
+- Lib baru src/lib/gis/crs.ts: katalog CRS (WGS84 derajat, DMS teks, MGRS via paket mgrs@2.2.0, UTM 1–60 N/S generator, Web Mercator EPSG:3857) + EPSG ONLINE apa pun via epsg.io (CORS terbuka, diverifikasi) dengan cache localStorage (sekali ambil → offline); deteksiKoordinat (derajat/DMS/meter-UTM dgn tebak hemisfer/meter-lain); parseNilaiDms + formatDms (LS/BT/LU/BB); wktPrj (WKT .prj utk SHP: WGS84/UTM/WebMercator).
+- Dialog baru KonversiDialog (tombol "Konversi" di grup Analisis): mode SATU TITIK — hasil tampil SEMUA format sekaligus (derajat, DMS, UTM zona otomatis, MGRS, Web Mercator + CRS tujuan kustom); mode BATCH — tempel daftar (dukung x,y / DMS / MGRS), tabel hasil, unduh CSV (BOM UTF-8) dgn kolom hasil CRS tujuan; komponen CrsPicker bersama (kategori + zona/hemi UTM + input kode EPSG dgn status + daftar tersimpan).
+- Impor Excel/CSV: deteksi otomatis dari 60 baris sampel → banner "Terdeteksi: …" (hijau = derajat, kuning = meter + radio pakai-apa-adanya / konversi UTM + pilih zona/hemisfer; catatan zona tak bisa ditebak); hitungDanTambah konversi UTM→derajat saat dipilih (mode gabungan & terpisah).
+- Ekspor: pilihan "Sistem koordinat keluaran" (CrsPicker, tanpa opsi teks) + saran zona UTM dari pusat data; Excel excelZip: kolom X/Y (CRS) tambahan utk titik + daftar X/Y utk poligon (lat/lng tetap ada); DXF bangunDxf: param proyeksi (koordinat meter, tinggi teks 2 m); SHP shapefileZip: geometri diproyeksikan + .prj WKT sesuai (CRS lain tetap WGS84 + peringatan); KMZ/GPX selalu WGS84 sesuai spesifikasi (dijelaskan di toast).
+- 2 BUG ditemukan & diperbaiki saat uji: (1) formatDms versi crs salah kali 60 (detik jadi pecahan menit) — fix; (2) CRASH: mgrs.forward melempar utk |lat|>84° saat input UTM salah zona → semua format turunan dibungkus coba()/try-catch + hasil konversi di luar rentang bumi ditolak dengan catatan.
+- Uji: scripts/uji-crs.ts — 33/33 lulus (UTM 49S & 54N round-trip 1e-6°, MGRS 49MDN round-trip <1 m, DMS format/parse 4 gaya, deteksi 5 kasus, WKT UTM 49S, EPSG:23835 TM-3 DGN95 Jateng live round-trip). E2e browser: dialog konversi tunggal (Semarang → semua format tepat), sumber UTM → derajat akurat, ambil EPSG 23835 sukses + tersimpan, batch 4 baris (3 lulus, 1 rusak ditolak) + CSV terunduh benar, impor CSV UTM terdeteksi → konversi zona 49 → 4 titik tepat Semarang (atribut X/Y asli tersimpan, elevasi DEM ikut), ekspor DXF dalam meter UTM 49S terverifikasi isinya. tsc+lint+build bersih.
+
+Stage Summary:
+- MENU KONVERSI KOORDINAT LIVE DI DEV: satu titik → semua format sekaligus; batch → CSV; ribuan CRS via kode EPSG (online + cache offline); deteksi otomatis saat impor; pilihan CRS saat ekspor (Excel kolom X/Y, DXF meter, SHP + .prj). Batasan jujur: SHP hanya mendukung WGS84/UTM/WebMercator (WKT), KMZ/GPX terkunci WGS84 oleh spesifikasi, dan zona UTM tak bisa ditebak dari angka X/Y (user memilih). Menunggu konfirmasi user → rilis v1.5.0.

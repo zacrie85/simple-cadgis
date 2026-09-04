@@ -13,6 +13,7 @@ import ElevasiDialog from "./dialogs/ElevasiDialog";
 import PoligonTitikDialog from "./dialogs/PoligonTitikDialog";
 import OptimasiDialog from "./dialogs/OptimasiDialog";
 import RasterDialog from "./dialogs/RasterDialog";
+import KonversiDialog from "./dialogs/KonversiDialog";
 import View3D from "./dialogs/View3D";
 import LayerPanel from "./dialogs/LayerPanel";
 import {
@@ -106,6 +107,7 @@ export default function GisApp() {
         <PoligonTitikDialog />
         <OptimasiDialog />
         <RasterDialog />
+        <KonversiDialog />
         <View3D />
         <LayerPanel />
         <SimpanProyekDialog />

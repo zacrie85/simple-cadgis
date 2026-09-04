@@ -60,6 +60,7 @@ export interface DialogState {
   optimasi: boolean;
   raster: boolean;
   ikonTitik: boolean; // ganti ikon penanda massal utk titik terpilih (hasil Blok)
+  konversi: boolean; // menu konversi koordinat (CRS universal)
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -194,6 +195,7 @@ const DIALOG_AWAL: DialogState = {
   optimasi: false,
   raster: false,
   ikonTitik: false,
+  konversi: false,
   point: null,
   text: null,
   shapeInfo: null,
