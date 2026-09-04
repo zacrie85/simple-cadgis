@@ -4,6 +4,8 @@
  * gambar PNG/JPEG → sampling elevasi per titik (bilinear, lokal, tanpa internet).
  * CRS didukung: WGS84 (4326/4269), DGN95 geografis (4755), UTM WGS84 semua zona
  * (326xx/327xx), Web Mercator (3857), Indonesia TM-3 DGN95 (23830–23845), 9377.
+ * Selain itu: gambar biasa (PNG/JPEG) + world file (.tfw/.jgw/.pgw) — zona UTM/TM-3
+ * dipilih pemakai; koordinat derajat terdeteksi otomatis.
  *
  * Prinsip anti-hang:
  *  - Semua dekode berjalan DI SINI (worker), UI utama tetap responsif.
@@ -27,6 +29,12 @@ import {
   type LevelPiramida,
   type MetaPiramida,
 } from "../lib/gis/piramida-db";
+import {
+  ZONA_TM3,
+  defZona,
+  parseWorldFile,
+  sudutWorld,
+} from "../lib/gis/worldfile";
 
 export type InfoRaster = {
   lebarPx: number;
@@ -42,7 +50,7 @@ export type InfoRaster = {
 };
 
 type Masuk =
-  | { type: "buka"; id: string; file: File; piramidaMb?: number }
+  | { type: "buka"; id: string; file: File; piramidaMb?: number; world?: { teks: string; zona: string } }
   | { type: "batalkan-buka"; id: string }
   | { type: "batalkan-piramida"; id: string }
   | { type: "batalkan-elevasi" }
@@ -103,12 +111,6 @@ async function tagRaster(im: CitraTiff, nama: string): Promise<unknown> {
 function kirim(id: string, persen: number, tahap: string) {
   ctx.postMessage({ type: "progres", id, persen, tahap });
 }
-
-/** Zona TM-3 DGN95 (EPSG 23830–23845, urut kode): label zona resmi BPN. */
-const ZONA_TM3 = [
-  "46.2", "47.1", "47.2", "48.1", "48.2", "49.1", "49.2", "50.1",
-  "50.2", "51.1", "51.2", "52.1", "52.2", "53.1", "53.2", "54.1",
-] as const;
 
 /**
  * Definisi proj4 dari GeoKeys — dukung WGS84 & DGN95 geografis, Web Mercator,
@@ -206,8 +208,115 @@ function bilinear(
   return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
 }
 
+/**
+ * Pesan ramah utk file yang BUKAN GeoTIFF — kenali tanda-format umum.
+ * Kasus nyata: gambar PNG/JPG di-rename .tif (ekspor peta), JP2, arsip, PDF.
+ */
+function pesanFormatBukanTiff(head: Uint8Array, nama: string): string {
+  const cocok = (sig: number[], off = 0): boolean => sig.every((b, i) => head[off + i] === b);
+  const gambar = cocok([0x89, 0x50, 0x4e, 0x47]) ? "PNG" : cocok([0xff, 0xd8, 0xff]) ? "JPEG" : "";
+  if (gambar) {
+    return `File "${nama}" ternyata gambar ${gambar} (bukan GeoTIFF) — kemungkinan hasil ekspor peta/gambar yang di-rename .tif. Bila ada file koordinat pendampingnya (world file .tfw/.jgw/.pgw), pilih KEDUA file sekaligus di dialog ini — gambar + world file langsung didukung. Atau konversi ke GeoTIFF via QGIS: Raster → Conversion → Translate.`;
+  }
+  if (cocok([0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20])) {
+    return `File "${nama}" berformat JPEG 2000 (JP2) — browser tidak punya dekoder JP2. Konversi dulu via QGIS: Raster → Conversion → Translate (format GTiff).`;
+  }
+  if (cocok([0x50, 0x4b])) {
+    return `File "${nama}" adalah arsip ZIP/KMZ — ekstrak dulu isinya, lalu impor file citranya.`;
+  }
+  if (cocok([0x1f, 0x8b])) return `File "${nama}" terkompresi gzip — ekstrak dulu lalu impor hasilnya.`;
+  if (cocok([0x52, 0x61, 0x72, 0x21])) return `File "${nama}" arsip RAR — ekstrak dulu isinya.`;
+  if (cocok([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])) return `File "${nama}" arsip 7z — ekstrak dulu isinya.`;
+  if (cocok([0x25, 0x50, 0x44, 0x46])) return `File "${nama}" adalah PDF, bukan raster georeferensi.`;
+  if (cocok([0x89, 0x48, 0x44, 0x46]) || cocok([0x0e, 0x03, 0x13, 0x01])) {
+    return `File "${nama}" berformat HDF (HDF4/HDF5) — konversi dulu ke GeoTIFF via QGIS/GDAL.`;
+  }
+  const teks = head.length > 0 && head.every((b) => b === 9 || b === 10 || b === 13 || (b >= 32 && b < 127));
+  if (teks) {
+    return `File "${nama}" berisi teks biasa — kemungkinan world file (.tfw) atau file lain, bukan citra raster. Pilih gambar pendampingnya (.tif/.png/.jpg) BERSAMA world file-nya sekaligus.`;
+  }
+  return `File "${nama}" tidak dikenali sebagai GeoTIFF (header tidak sah). Pastikan file benar-benar GeoTIFF — konversi via QGIS: Raster → Conversion → Translate.`;
+}
+
+/** ====== BUKA GAMBAR + WORLD FILE (PNG/JPG/TIFF + .tfw/.jgw/.pgw) ======
+ * World file hanya berisi transform affine (tanpa CRS) → zona dipilih pemakai
+ * di dialog (UTM/TM-3) atau otomatis bila koordinatnya derajat.
+ */
+async function bukaGambarWorld(id: string, file: File, world: { teks: string; zona: string }) {
+  const ac = new AbortController();
+  batalBuka.set(id, ac);
+
+  const data = parseWorldFile(world.teks);
+  if (!data) {
+    throw new Error(
+      "World file pendamping tidak valid — isinya harus 6 angka (A D B E C F, dipisah baris baru)."
+    );
+  }
+
+  kirim(id, 10, "Membaca gambar…");
+  const bmp = await createImageBitmap(file);
+  const w = bmp.width;
+  const h = bmp.height;
+  if (!w || !h) throw new Error("Gambar tidak dapat dibaca (dimensi 0).");
+
+  kirim(id, 35, "Membaca sistem koordinat…");
+  const { def, label: sumberCrs } = defZona(world.zona);
+  if (!def && (Math.abs(data.c) > 360 || Math.abs(data.f) > 180)) {
+    throw new Error(
+      "Koordinat world file terlalu besar untuk derajat geografis — ini koordinat meter proyeksi. Pilih zona UTM/TM-3 yang sesuai lalu impor ulang."
+    );
+  }
+
+  // 4 sudut luar CRS sumber → WGS84 (affine world file, mendukung rotasi kecil)
+  const sudut = sudutWorld(data, w, h);
+  const konversi = def ? proj4(def, "EPSG:4326") : null;
+  const wgs = sudut.map(([x, y]) => (konversi ? konversi.forward([x, y]) : [x, y]));
+  const lngs = wgs.map((c) => c[0]);
+  const lats = wgs.map((c) => c[1]);
+  const barat = Math.min(...lngs);
+  const timur = Math.max(...lngs);
+  const selatan = Math.min(...lats);
+  const utara = Math.max(...lats);
+
+  const meter = def !== null;
+  const resolusi = (Math.abs(data.a) + Math.abs(data.e)) / 2;
+  const resolusiLabel = meter
+    ? `±${resolusi.toFixed(resolusi < 10 ? 2 : 0)} m/piksel`
+    : (() => {
+        const m = resolusi * 111320;
+        return m >= 1 ? `±${m.toFixed(0)} m/piksel` : `±${resolusi.toFixed(7)}°/piksel`;
+      })();
+
+  kirim(id, 70, "Menyiapkan pratinjau…");
+  let blob: Blob = file; // gambar kecil → pakai berkas asli apa adanya (kualitas penuh)
+  if (w > PRATINJAU_MAKS || h > PRATINJAU_MAKS) {
+    const tw = Math.min(PRATINJAU_MAKS, w);
+    const th = Math.max(1, Math.round((h / w) * tw));
+    const canvas = new OffscreenCanvas(tw, th);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, tw, th);
+    blob = await canvas.convertToBlob({ type: "image/png" });
+  }
+  bmp.close();
+  batalBuka.delete(id);
+
+  const info: InfoRaster = {
+    lebarPx: w,
+    tinggiPx: h,
+    barat,
+    timur,
+    selatan,
+    utara,
+    sumberCrs,
+    dem: false,
+    resolusiLabel,
+    ukuranFileMb: file.size / 1048576,
+  };
+  ctx.postMessage({ type: "siap", id, info });
+  ctx.postMessage({ type: "gambar", id, blob });
+}
+
 /** ====== BUKA RASTER: metadata + pratinjau ====== */
-async function bukaRaster(id: string, file: File, piramidaMb: number) {
+async function bukaRaster(id: string, file: File, piramidaMb: number, world?: { teks: string; zona: string }) {
   if (file.size > UKURAN_MAKS) {
     const mb = file.size / 1048576;
     const ukuran = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
@@ -221,12 +330,25 @@ async function bukaRaster(id: string, file: File, piramidaMb: number) {
       "ECW tidak dapat dibuka di aplikasi web (format proprietary — lisensinya melarang dekoder browser). Konversi dulu ke GeoTIFF: buka di QGIS → Raster → Conversion → Translate (format GTiff) → simpan, lalu impor hasilnya di sini."
     );
   }
+  if (world) {
+    await bukaGambarWorld(id, file, world);
+    return;
+  }
 
   const ac = new AbortController();
   batalBuka.set(id, ac);
 
   kirim(id, 2, "Membuka file…");
-  const tiff = await geotiff.fromBlob(file);
+  let tiff: TiffDok;
+  try {
+    tiff = await geotiff.fromBlob(file);
+  } catch (err) {
+    // bedakan: header BUKAN TIFF (format lain) vs TIFF yang rusak
+    const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+    const sah = (head[0] === 0x49 && head[1] === 0x49) || (head[0] === 0x4d && head[1] === 0x4d);
+    if (!sah) throw new Error(pesanFormatBukanTiff(head, file.name));
+    throw err;
+  }
   const image = await tiff.getImage(0);
   const w = image.getWidth();
   const h = image.getHeight();
@@ -732,7 +854,7 @@ let batalElevasi = false;
 ctx.addEventListener("message", (e) => {
   const m = e.data;
   if (m.type === "buka") {
-    bukaRaster(m.id, m.file, m.piramidaMb ?? 0).catch((err: Error) => {
+    bukaRaster(m.id, m.file, m.piramidaMb ?? 0, m.world).catch((err: Error) => {
       batalBuka.delete(m.id);
       const pesan = err?.message === "DIBATALKAN" ? "Impor raster dibatalkan." : err?.message || "Gagal membaca raster.";
       ctx.postMessage({ type: "error", id: m.id, message: pesan });

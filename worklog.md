@@ -1007,3 +1007,27 @@ Work Log:
 Stage Summary:
 - Impor raster kini menerima: WGS84 (4326/4269/4755 DGN95), UTM WGS84 semua zona, Web Mercator, Indonesia TM-3 DGN95 (23830–23845 — sistem kadaster BPN), EPSG:9377. Konversi ke WGS84 otomatis via proj4 di worker (4 sudut) → overlay, piramida, sampling elevasi otomatis ikut benar.
 - Catatan utk user: EPSG:9377 adalah sistem KOLOMBIA — bila datanya di Indonesia, kemungkinan file tersimpan dgn CRS salah di QGIS; sebaiknya cek CRS sumber. Tetap bisa diimpor sekarang (tampil sesuai tag filenya).
+
+---
+Task ID: 46
+Agent: Super Z (main)
+Task: Task 46 — impor raster gagal "Invalid byte order value." (file user tes.tif + tes.tfw) → dukungan gambar (PNG/JPG) + world file + pesan format yang jelas
+
+Work Log:
+- Diagnosis file asli user (upload/tes.tif): byte pertama 89 50 4E 47 = ‰PNG — file ini GAMBAR PNG yang di-rename .tif (693×480, hasil ekspor peta), bukan GeoTIFF; geotiff.js menolak header dengan "Invalid byte order value." (butuh II/MM). User juga menyertakan tes.tfw (world file): A=0.148432 D=-0.000563 B=-0.000563 E=-0.148432, UL (700157.617, 9239054.969) → UTM belahan selatan (northing 9,24 jt ≈ 6,86° LS), ±0,15 m/piksel, citra ±103×71 m.
+- Lib baru src/lib/gis/worldfile.ts (dipakai dialog + worker): parseWorldFile (6 angka, whitespace), apakahGeografis (derajat otomatis), sudutWorld (affine 4 sudut luar, dukung rotasi), defZona (proj4 def + label utk utm-<n>s/n & tm3-<z> & geo), ZONA_TM3 (dipindah dari worker), tebakZonaAwal (hemisfer dr northing; angka zona dr localStorage "geokita-zona-gambar"; easting ≤400rb → TM-3), simpanZonaTerakhir.
+- raster-worker.ts: mode buka dgn world {teks, zona} → bukaGambarWorld: createImageBitmap → 4 sudut affine → proj4 ke WGS84 → pratinjau (gambar ≤2048 px dipakai asli tanpa re-encode; besar di-downscale PNG); info.sumberCrs "World file — …"; DEM=false, tanpa piramida (bukan GeoTIFF). Sniffer pesanFormatBukanTiff: fromBlob gagal + header bukan II/MM → pesan spesifik per tanda format (PNG/JPEG → sarankan world file, JP2, ZIP/KMZ, gzip/RAR/7z, PDF, HDF, teks=world file saja); header TIFF sah → lempar error asli geotiff.
+- raster.ts: OpsiProses.world + postMessage meneruskan world.
+- RasterDialog.tsx: input multiple + accept .png/.jpg/.jpeg/.tfw/.tifw/.jgw/.pgw/.gfw/.jpw/.wld; pilihFile routing: cari pasangan (gambar, world) dr daftar file → sniff byte (PNG/JPG juga utk .tif) → ada world: parse → derajat = impor LANGSUNG; meter = panel zona picker (34 opsi: UTM 46-54 S/N + TM-3 46.2-54.1, preselect tebakan) → imporTunda; PNG/JPG tanpa world → toast "Gambar tanpa world file" (penjelasan); world saja → "World file tanpa gambar"; piramidaId hanya utk jalur GeoTIFF; teks drop-zone & info diperbarui; ikon MapPin.
+- SW v18 → v19. lint + tsc + build BERSIH.
+- Uji e2e (agent-browser, DataTransfer injection):
+  (1) File ASLI user (tes.tif+tes.tfw) → panel zona muncul, preselect utm-48s (tepat: northing 9,24 jt) → klik Impor → peta terbang ke (-6.881068, 106.811898) = PERSIS hitungan acuan pyproj UTM 48S (-6.88107, 106.81190); batas overlay (106.811432..106.812363, -6.881390..-6.880746) identik acuan; daftar: "693×480 px • World file — UTM Zona 48S (WGS84) • ±0.15 m/piksel". Bukti: scripts/uji-worldfile-48s.png.
+  (2) uji-derajat.png+pgw (WGS84 106.8, -6.2) → TANPA picker langsung impor, peta ke (-6.2005382, 106.8008982) sesuai harapan.
+  (3) PNG saja → toast "Gambar tanpa world file" + panduan. (4) .tfw saja → toast "World file tanpa gambar" + panduan.
+  (5) Regresi: GeoTIFF TM-3 23834 tetap normal (peta ke -6.10678, 106.85904 = Tanjung Priok).
+- Skrip aset: scripts/siapkan-uji-worldfile.py (verifikasi matematika file user + buat pasangan derajat). .gitignore += scripts/*.tfw & scripts/*.pgw; file uji dari public/ dibersihkan.
+
+Stage Summary:
+- FITUR BARU: impor GAMBAR (PNG/JPG — termasuk .tif hasil rename) + WORLD FILE (.tfw/.jgw/.pgw/.wld): pilih keduanya sekaligus → pilih zona UTM/TM-3 (teringat pemakaian terakhir; hemisfer otomatis) → tampil di peta pada koordinat benar; koordinat derajat (WGS84) terimpor otomatis tanpa picker.
+- Akar error "Invalid byte order value." terjawab: file .tif user sebenarnya PNG; kini pesan error menjelaskan format apa yang terdeteksi (PNG/JPG/JP2/ZIP/PDF/HDF/teks) + cara benar mengimpornya.
+- Hati-hati: world file TIDAK menyimpan CRS — zona salah = posisi salah; picker + tebakan pintar + validasi rentang derajat memitigasi.

@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * Dialog Impor Raster Georeferensi (GeoTIFF / ECW).
+ * Dialog Impor Raster Georeferensi (GeoTIFF / ECW / gambar+world file).
  * - GeoTIFF (.tif/.tiff) hingga 1 TB: dibaca bertahap di Web Worker
  *   → pratinjau overlay di peta pada koordinat yang benar, UI tidak pernah beku.
+ * - Gambar biasa (PNG/JPG — termasuk yang di-rename .tif) + world file
+ *   (.tfw/.jgw/.pgw): zona UTM/TM-3 dipilih pemakai (world file tidak menyimpan
+ *   CRS); koordinat derajat terdeteksi otomatis.
  * - DEM 1 band otomatis terdeteksi → bisa dipakai sumber elevasi LOKAL di menu Elevasi DEM.
  * - ECW: tidak ada dekoder browser (lisensi proprietary) → tampilkan panduan konversi via QGIS/GDAL.
  * - Layer raster hanya tersimpan selama aplikasi terbuka (gambar terlalu besar untuk localStorage).
@@ -31,7 +34,15 @@ import {
   Download,
   Layers,
   LocateFixed,
+  MapPin,
 } from "lucide-react";
+import {
+  ZONA_TM3,
+  ZONA_UTM_INDONESIA,
+  parseWorldFile,
+  tebakZonaAwal,
+  simpanZonaTerakhir,
+} from "@/lib/gis/worldfile";
 
 const UKURAN_MAKS = 1024 * 1024 * 1024 * 1024; // 1 TB
 
@@ -60,6 +71,9 @@ export default function RasterDialog() {
   const [progres, setProgres] = useState({ persen: 0, tahap: "" });
   const [drag, setDrag] = useState(false);
   const [piramidaMb, setPiramidaMb] = useState(100);
+  // gambar + world file menunggu pilihan zona (world file tidak menyimpan CRS)
+  const [tunda, setTunda] = useState<{ file: File; namaWorld: string; teks: string; lebarPx: number; tinggiPx: number } | null>(null);
+  const [zonaDipilih, setZonaDipilih] = useState("utm-48s");
 
   // langganan progres piramida (dikirim worker SETELAH impor sukses)
   const setPiramidaRaster = useGis((s) => s.setPiramidaRaster);
@@ -82,6 +96,7 @@ export default function RasterDialog() {
       sinyalBatal.current = { dibatalkan: false };
       setJalan(false);
       setProgres({ persen: 0, tahap: "" });
+      setTunda(null);
     }
     terbuka.current = open;
   }, [open]);
@@ -93,7 +108,7 @@ export default function RasterDialog() {
     setDialog("raster", false);
   };
 
-  const proses = async (file: File) => {
+  const proses = async (file: File, world?: { teks: string; zona: string }) => {
     const nama = file.name.toLowerCase();
     if (nama.endsWith(".ecw")) {
       toast.error("Format ECW tidak didukung browser", {
@@ -103,9 +118,9 @@ export default function RasterDialog() {
       });
       return;
     }
-    if (!nama.endsWith(".tif") && !nama.endsWith(".tiff")) {
+    if (!world && !nama.endsWith(".tif") && !nama.endsWith(".tiff")) {
       toast.error("Format tidak dikenali", {
-        description: "Gunakan GeoTIFF (.tif / .tiff). File ECW dikonversi dulu ke GeoTIFF via QGIS/GDAL.",
+        description: "Gunakan GeoTIFF (.tif / .tiff) atau gambar (PNG/JPG) + world file (.tfw/.jgw). File ECW dikonversi dulu ke GeoTIFF via QGIS/GDAL.",
       });
       return;
     }
@@ -128,7 +143,8 @@ export default function RasterDialog() {
         kunci: idLayer,
         onProgres: setProgres,
         sinyalBatal: sinyalBatal.current,
-        piramidaMb,
+        piramidaMb: world ? 0 : piramidaMb, // gambar+world file tidak lewat konverter piramida (bukan GeoTIFF)
+        world,
       });
       const layer: RasterLayer = {
         id: idLayer,
@@ -148,7 +164,7 @@ export default function RasterDialog() {
         ukuranFileMb: info.ukuranFileMb,
         dibuat: Date.now(),
         piramidaId:
-          piramidaMb > 0 && !info.dem && info.lebarPx > 4096
+          !world && piramidaMb > 0 && !info.dem && info.lebarPx > 4096
             ? idPiramidaDariTanda(`${file.name}|${file.size}|${file.lastModified}`)
             : undefined,
       };
@@ -178,9 +194,96 @@ export default function RasterDialog() {
     }
   };
 
-  const pilihFile = (files: FileList | null) => {
-    const file = files?.[0];
-    if (file) void proses(file);
+  /** Pilih file: dukung (1) GeoTIFF, (2) gambar PNG/JPG + world file sekaligus,
+   *  termasuk gambar yang di-rename .tif (terdeteksi dari isi file). */
+  const pilihFile = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const daftar = Array.from(files);
+    const gambar = daftar.find((f) => /\.(tif|tiff|png|jpe?g)$/i.test(f.name));
+    const world = daftar.find((f) => /\.(tfw|tifw|jgw|pgw|gfw|jpw|wld)$/i.test(f.name));
+    if (!gambar) {
+      toast.error(world ? "World file tanpa gambar" : "Format tidak dikenali", {
+        description: world
+          ? "File .tfw/.jgw hanya berisi koordinat — pilih juga gambar pendampingnya (.tif / .png / .jpg) sekaligus."
+          : "Gunakan GeoTIFF (.tif/.tiff) atau gambar (PNG/JPG) + world file (.tfw/.jgw). File ECW dikonversi dulu ke GeoTIFF via QGIS/GDAL.",
+      });
+      return;
+    }
+    const nama = gambar.name.toLowerCase();
+    if (nama.endsWith(".ecw")) {
+      toast.error("Format ECW tidak didukung browser", {
+        description:
+          "Tidak ada dekoder ECW untuk aplikasi web (lisensi proprietary). Gunakan tombol “Skrip ECW Bridge” di dialog ini untuk konversi otomatis via QGIS.",
+        duration: 12000,
+      });
+      return;
+    }
+    // sniff isi file — .tif bisa saja PNG/JPG yang di-rename
+    let tanda: Uint8Array;
+    try {
+      tanda = new Uint8Array(await gambar.slice(0, 8).arrayBuffer());
+    } catch {
+      tanda = new Uint8Array(0);
+    }
+    const png = tanda[0] === 0x89 && tanda[1] === 0x50;
+    const jpg = tanda[0] === 0xff && tanda[1] === 0xd8;
+    if (png || jpg) {
+      if (!world) {
+        toast.error("Gambar tanpa world file", {
+          description: `File ini berisi gambar ${png ? "PNG" : "JPEG"}, bukan GeoTIFF berkoordinat. Pilih sekalian world file pendampingnya (.tfw/.jgw/.pgw) — biasanya namanya sama dengan gambarnya — agar bisa diletakkan di peta.`,
+          duration: 12000,
+        });
+        return;
+      }
+      const teks = await world.text();
+      const data = parseWorldFile(teks);
+      if (!data) {
+        toast.error("World file tidak valid", {
+          description: "Isi world file harus 6 angka (A D B E C F, dipisah baris baru).",
+        });
+        return;
+      }
+      let lebarPx = 0;
+      let tinggiPx = 0;
+      try {
+        const bmp = await createImageBitmap(gambar);
+        lebarPx = bmp.width;
+        tinggiPx = bmp.height;
+        bmp.close();
+      } catch {
+        toast.error("Gambar tidak dapat dibaca browser", {
+          description: "Format PNG/JPEG-nya mungkin tidak standar (mis. CMYK). Konversi dulu via QGIS ke GeoTIFF.",
+        });
+        return;
+      }
+      const zona = tebakZonaAwal(data);
+      if (zona === "geo") {
+        // koordinat derajat — tak perlu zona, langsung impor
+        void proses(gambar, { teks, zona });
+        return;
+      }
+      setZonaDipilih(zona);
+      setTunda({ file: gambar, namaWorld: world.name, teks, lebarPx, tinggiPx });
+      return;
+    }
+    if (!nama.endsWith(".tif") && !nama.endsWith(".tiff")) {
+      toast.error("Format tidak dikenali", {
+        description: "Gunakan GeoTIFF (.tif / .tiff) atau gambar (PNG/JPG) + world file (.tfw/.jgw). File ECW dikonversi dulu ke GeoTIFF via QGIS/GDAL.",
+      });
+      return;
+    }
+    // GeoTIFF asli — world file diabaikan (georeferensi tertanam lebih utama)
+    void proses(gambar);
+  };
+
+  /** Lanjutkan impor gambar+world file setelah zona dipilih. */
+  const imporTunda = () => {
+    if (!tunda) return;
+    const { file, teks } = tunda;
+    const zona = zonaDipilih;
+    simpanZonaTerakhir(zona);
+    setTunda(null);
+    void proses(file, { teks, zona });
   };
 
   /** Zoom peta ke cakupan raster + kotak kedip — supaya lokasi raster langsung ketemu. */
@@ -230,7 +333,9 @@ export default function RasterDialog() {
                 </button>
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                GeoTIFF (.tif / .tiff) — maksimal 1 TB • orthophoto/citra &amp; DEM
+                GeoTIFF (.tif/.tiff) — maksimal 1 TB • orthophoto/citra &amp; DEM
+                <br />
+                atau gambar (PNG/JPG) + world file (.tfw/.jgw/.pgw) — pilih keduanya sekaligus
                 <br />
                 CRS: WGS84, UTM, Web Mercator, <b>Indonesia TM-3 DGN95</b>, 9377
               </p>
@@ -257,13 +362,65 @@ export default function RasterDialog() {
               <input
                 ref={inputRef}
                 type="file"
-                accept=".tif,.tiff,.ecw"
+                accept=".tif,.tiff,.ecw,.png,.jpg,.jpeg,.tfw,.tifw,.jgw,.pgw,.gfw,.jpw,.wld"
+                multiple
                 className="hidden"
                 onChange={(e) => {
                   pilihFile(e.target.files);
                   e.target.value = "";
                 }}
               />
+            </div>
+          )}
+
+          {/* pilihan zona utk gambar + world file (world file tidak menyimpan CRS) */}
+          {tunda && !jalan && (
+            <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 space-y-2">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-900">
+                <MapPin className="h-4 w-4" /> Gambar + world file terdeteksi
+              </p>
+              <p className="text-[11px] text-sky-800">
+                {tunda.file.name} • {tunda.lebarPx.toLocaleString("id-ID")}×{tunda.tinggiPx.toLocaleString("id-ID")} px •
+                bersama {tunda.namaWorld}
+              </p>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+                Pilih zona koordinatnya (world file tidak menyimpan zona)
+              </label>
+              <select
+                value={zonaDipilih}
+                onChange={(e) => setZonaDipilih(e.target.value)}
+                className="w-full rounded-md border border-sky-200 bg-white px-2 py-1.5 text-xs"
+              >
+                <optgroup label="UTM Zona Selatan (WGS84)">
+                  {ZONA_UTM_INDONESIA.map((z) => (
+                    <option key={`s${z}`} value={`utm-${z}s`}>
+                      UTM Zona {z}S
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="UTM Zona Utara (WGS84)">
+                  {ZONA_UTM_INDONESIA.map((z) => (
+                    <option key={`n${z}`} value={`utm-${z}n`}>
+                      UTM Zona {z}N
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Indonesia TM-3 (DGN95)">
+                  {ZONA_TM3.map((z) => (
+                    <option key={z} value={`tm3-${z}`}>
+                      TM-3 zona {z}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" className="rounded-xl h-8" onClick={() => setTunda(null)}>
+                  Batal
+                </Button>
+                <Button className="rounded-xl h-8" onClick={imporTunda}>
+                  Impor gambar
+                </Button>
+              </div>
             </div>
           )}
 
@@ -422,7 +579,9 @@ export default function RasterDialog() {
               mengarah ke lokasi raster; untuk mencarinya lagi kapan pun, klik tombol <b>&quot;Zoom ke raster&quot;</b> (ikon
               bidik) pada daftar di atas. <b>Konverter otomatis</b> membuat
               piramida detail (±50–200 MB) tersimpan lokal di browser: peta zoom tajam tanpa membaca ulang file asli,
-              dan tahan tutup aplikasi — file sama diimpor ulang = langsung pakai cache. Layer raster sendiri tersimpan
+              dan tahan tutup aplikasi — file sama diimpor ulang = langsung pakai cache. Gambar biasa
+              (PNG/JPG, termasuk yang di-rename .tif) bisa diimpor bersama world file (.tfw/.jgw) — pilih
+              zona UTM/TM-3 saat diminta. Layer raster sendiri tersimpan
               selama aplikasi terbuka; Simpan/Muat proyek tidak menyertakan raster.
             </span>
           </p>

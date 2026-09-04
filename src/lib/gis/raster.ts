@@ -20,6 +20,8 @@ export interface OpsiProses {
   sinyalBatal?: { dibatalkan: boolean };
   /** Anggaran ukuran piramida detail (MB). 0/kosong = tanpa piramida. */
   piramidaMb?: number;
+  /** Mode gambar + world file: isi world file + zona pilihan ("geo" | "utm-<n>s|n" | "tm3-<z>"). */
+  world?: { teks: string; zona: string };
 }
 
 let wk: Worker | null = null;
@@ -87,7 +89,7 @@ export function bukaRaster(file: File, opsi: OpsiProses = {}): Promise<HasilBuka
     };
     worker.addEventListener("message", dengar);
     worker.addEventListener("error", gagal);
-    worker.postMessage({ type: "buka", id, file, piramidaMb: opsi.piramidaMb ?? 0 });
+    worker.postMessage({ type: "buka", id, file, piramidaMb: opsi.piramidaMb ?? 0, world: opsi.world });
   });
 }
 

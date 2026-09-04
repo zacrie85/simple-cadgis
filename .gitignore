@@ -65,4 +65,6 @@ __pycache__/
 upload/
 scripts/*.png
 scripts/*.tif
+scripts/*.tfw
+scripts/*.pgw
 public/*.tif
