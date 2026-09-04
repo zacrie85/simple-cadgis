@@ -5,6 +5,7 @@ import L from "leaflet";
 import { useGis } from "@/lib/gis/store";
 import { FloatingWindow } from "./Chips";
 import { warnaElevasi } from "@/lib/gis/contours";
+import { gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
 import { GAYA_UTARA, type GayaUtaraId } from "./NorthArrows";
 import { Printer, Move, RotateCcw, ImagePlus, X, FileDown, ImageDown } from "lucide-react";
 import { toast } from "sonner";
@@ -300,7 +301,7 @@ export default function LayoutView() {
         L.marker([lb.lat, lb.lng], {
           icon: L.divIcon({
             className: "",
-            html: `<div class="geokita-label">${lb.text.replace(/</g, "&lt;")}</div>`,
+            html: `<div class="${kelasLabel(lb)}" style="${gayaLabel(lb)}">${lb.text.replace(/</g, "&lt;")}</div>`,
           }),
         }).addTo(layer);
       }

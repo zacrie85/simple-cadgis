@@ -817,3 +817,25 @@ Stage Summary:
 - RILIS v1.6.0 SELESAI & TERVERIFIKASI: Pages live (SW v10) + installer SIMPLE-CADGIS-Setup-1.6.0.exe (~189 MB) dapat diunduh di GitHub Releases.
 - Isi rilis: Panel Layer mengambang (drag header, resize tepi/pojok, posisi persisten, toggle, reset) + Password Gate (default A$rama33, hash SHA-256 lokal, ubah via SETELAN › Password, Kunci Sekarang).
 - Catatan keamanan berulang: token ghp_... yang dipakai push sudah lama & perlu di-revoke user setelah rilis ini.
+
+---
+Task ID: 38
+Agent: Super Z (main)
+Task: Task 38 — upgrade GAMBAR › TEKS: (1) arah tulisan horizontal/vertikal pilihan manual, (2) mode teks pendek vs paragraf (Enter = baris baru), (3) resize manual teks yang sudah jadi
+
+Work Log:
+- Model: GisLabel + field opsional `arah: "horizontal"|"vertikal"` (default horizontal) & `ukuran: number px` (default 12) — file proyek/autosave lama tetap kompatibel (opsional).
+- Modul baru labelTampil.ts: kelasLabel() (kelas CSS gabungan: paragraf bila teks mengandung "\n", vertikal bila arah=vertikal) + gayaLabel() (inline font-size, clamp 8–144) — dipakai MapCanvas & LayoutView agar peta & layout cetak identik.
+- CSS globals: .geokita-label-paragraf (white-space pre-wrap, radius 12px, max-width 360px, rata kiri), .geokita-label-vertikal (writing-mode vertical-rl + text-orientation mixed → tulisan berdiri atas→bawah), .geokita-label-resize (pegangan 14×14 pojok kanan-bawah, muncul saat hover, cursor nwse-resize, touch-action none).
+- TextForm dirombak: toggle Mode teks (Teks Pendek = Input 1 baris, Enter=simpan / Paragraf = Textarea, Enter=baris baru, Ctrl+Enter=simpan, maks 2000 kar); toggle Arah (Horizontal/Vertikal, ikon MoveHorizontal/MoveVertical); Ukuran huruf (slider 8–144 + tombol A− /A+ + badge px); PRATINJAU HIDUP (render gaya sama dgn peta); mode pendek meratakan "\n" hasil tempel jadi spasi; dialog edit auto-pilih paragraf bila teks lama mengandung "\n", slider terisi ukuran tersimpan.
+- MapCanvas render label: html pakai kelasLabel+gayaLabel+escapeHtml (baris baru utuh via pre-wrap); pegangan resize di dalam divIcon — gestur pointerdown+MOUSEDOWN fallback (flag tarikAktif anti-ganda; stopPropagation agar tak memicu dialog edit/peta); onMove = pratinjau langsung el.style.fontSize (tanpa rebuild store); onUp = updateLabel({ukuran}) sekali (marker rebuild, ukuran persisten). Delta diagonal (dx+dy)/2, clamp 8–144.
+- LayoutView (cetak): label kini pakai kelasLabel+gayaLabel juga (tanpa pegangan) — arah/ukuran/paragraf ikut tampil di layout.
+- Toolbar: title tombol Teks diperbarui (paragraf/arah/resize).
+- sw.js v10 → v11; package.json 1.6.0 → 1.7.0. tsc + lint + build BERSIH.
+- Uji e2e browser: gerbang password (sesi baru) → login; alat Teks sticky → dialog baru lengkap; paragraf 3 baris + vertikal + slider 26 → pratinjau dialog vertikal benar → simpan → peta: kelas "geokita-label geokita-label-paragraf geokita-label-vertikal" fs 26px, 3 kolom vertikal; RELOAD + pulihkan sesi → label vertikal & ukuran tetap; drag pegangan (Playwright mouse) 126→39px (delta dihitung pas), autosave "ukuran":39; klik label → dialog edit memuat paragraf+39 → ganti Horizontal → peta jadi paragraf horizontal 39px; teks pendek "Titik A" (Enter) → pill 12px default, alat tetap menyala.
+- DEBUG CATATAN: drag pertama gagal karena (a) viewport agent-browser berubah 1280×577 (pegangan di luar layar → elementsFromPoint KOSONG) dan (b) CDP mouse Playwright hanya memicu mousedown tanpa pointerdown — diselesaikan dgn fallback mousedown + set viewport 1440×900; logika pointer murni terbukti benar via event sintetis (26→126px).
+- Bukti: download/uji38-dialog.png, uji38-dialog-isi.png, uji38-hasil.png (vertikal 3 kolom), uji38-resize.png, uji38-horizontal.png.
+
+Stage Summary:
+- FITUR BARU menu GAMBAR › TEKS: (1) pilihan arah tulisan Horizontal/Vertikal per label; (2) mode Teks Pendek vs Paragraf multi-baris (Enter = baris baru, tersusun ke bawah, putus otomatis maks 360px); (3) resize manual dua cara — tarik pegangan biru di pojok kanan-bawah label langsung di peta (pratinjau live, persisten) atau slider/A± di dialog edit; semua tersimpan di proyek & ikut tampil di layout cetak; kompatibel mundur dgn label lama.
+- Rilis v1.7.0 (tag) MENUNGGU konfirmasi user setelah uji di Pages.

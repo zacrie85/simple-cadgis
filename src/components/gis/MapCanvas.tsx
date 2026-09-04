@@ -9,6 +9,7 @@ import { warnaElevasi } from "@/lib/gis/contours";
 import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
 import { ikonDivIcon } from "@/lib/gis/ikon-divicon";
 import { ikonHtml } from "@/lib/gis/ikon-titik";
+import { gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
 import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
 
 const RENDER_CAP = 20000; // batas keras titik dirender (data lengkap tetap di memori/tabel)
@@ -1128,7 +1129,7 @@ export default function MapCanvas() {
       if (lb.layerId && layerSembunyi.has(lb.layerId)) continue; // label ikut layer
       const icon = L.divIcon({
         className: "",
-        html: `<div class="geokita-label">${escapeHtml(lb.text)}</div>`,
+        html: `<div class="${kelasLabel(lb)}" style="${gayaLabel(lb)}">${escapeHtml(lb.text)}<span class="geokita-label-resize" title="Tarik untuk mengubah ukuran huruf"></span></div>`,
         iconSize: undefined,
       });
       const m = L.marker([lb.lat, lb.lng], { icon });
@@ -1136,6 +1137,49 @@ export default function MapCanvas() {
         useGis.getState().setDialog("text", { lat: lb.lat, lng: lb.lng, editId: lb.id });
       });
       m.addTo(l.labels);
+
+      // pegangan resize manual: tarik titik biru di pojok kanan-bawah label
+      const akar = m.getElement();
+      const kotak = akar?.querySelector<HTMLElement>(".geokita-label");
+      const pegangan = akar?.querySelector<HTMLElement>(".geokita-label-resize");
+      if (kotak && pegangan) {
+        let tarikAktif = false; // pengaman agar pointerdown + mousedown tidak memulai 2 gestur
+        const mulaiTarik = (ev: PointerEvent | MouseEvent) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          if (tarikAktif) return; // gestur sudah berjalan (pointerdown vs mousedown ganda)
+          tarikAktif = true;
+          const awalUk = lb.ukuran ?? 12;
+          const sx = ev.clientX;
+          const sy = ev.clientY;
+          let hasil = awalUk;
+          const onMove = (e2: PointerEvent | MouseEvent) => {
+            const d = e2.clientX - sx + (e2.clientY - sy); // diagonal = membesar
+            hasil = Math.min(144, Math.max(8, Math.round(awalUk + d / 2)));
+            kotak.style.fontSize = `${hasil}px`; // pratinjau langsung di peta (tanpa rebuild)
+          };
+          const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("mouseup", onUp);
+            window.removeEventListener("pointercancel", onUp);
+            tarikAktif = false;
+            if (hasil !== awalUk) useGis.getState().updateLabel(lb.id, { ukuran: hasil });
+          };
+          window.addEventListener("pointermove", onMove);
+          window.addEventListener("mousemove", onMove); // fallback browser tanpa pointer event
+          window.addEventListener("pointerup", onUp);
+          window.addEventListener("mouseup", onUp);
+          window.addEventListener("pointercancel", onUp);
+        };
+        pegangan.addEventListener("pointerdown", mulaiTarik);
+        pegangan.addEventListener("mousedown", mulaiTarik);
+        // jangan biarkan pegangan memicu klik edit label / drag peta
+        const cegah = (e: Event) => e.stopPropagation();
+        pegangan.addEventListener("click", cegah);
+        pegangan.addEventListener("dblclick", cegah);
+      }
     }
   }, [labels, layers]);
 

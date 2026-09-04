@@ -69,6 +69,10 @@ export interface GisLabel {
   lat: number;
   lng: number;
   text: string;
+  /** Arah tulisan — "horizontal" (bawaan) atau "vertikal" (berdiri atas→bawah). */
+  arah?: "horizontal" | "vertikal";
+  /** Ukuran huruf px (bawaan 12) — hasil resize manual. */
+  ukuran?: number;
   layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
 }
 

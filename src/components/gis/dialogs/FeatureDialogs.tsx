@@ -11,7 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { MapPin, Type, Shapes, Camera, X, Trash2, Loader2, Sticker } from "lucide-react";
+import { MapPin, Type, Shapes, Camera, X, Trash2, Loader2, Sticker, MoveHorizontal, MoveVertical } from "lucide-react";
+import { UKURAN_LABEL_BAWAAN, UKURAN_LABEL_MAKS, UKURAN_LABEL_MIN, gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
+import type { GisLabel } from "@/lib/gis/types";
 import { DAFTAR_IKON, htmlPolos, ikonHtml } from "@/lib/gis/ikon-titik";
 
 const WARNA = ["#2563eb", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#0ea5e9", "#f97316", "#64748b"];
@@ -279,52 +281,176 @@ function TextForm({
   state: { lat: number; lng: number; editId?: string };
   tutup: () => void;
 }) {
-  const [text, setText] = useState(() => {
-    if (state.editId) {
-      const l = useGis.getState().labels.find((x) => x.id === state.editId);
-      return l?.text ?? "";
-    }
-    return "";
-  });
+  // data label lama (mode edit) — dibaca sekali; dialog di-remount per label lewat key
+  const awal: GisLabel | undefined = state.editId
+    ? useGis.getState().labels.find((x) => x.id === state.editId)
+    : undefined;
+
+  const [teks, setTeks] = useState(awal?.text ?? "");
+  const [mode, setMode] = useState<"pendek" | "paragraf">(() =>
+    awal?.text.includes("\n") ? "paragraf" : "pendek",
+  );
+  const [arah, setArah] = useState<"horizontal" | "vertikal">(awal?.arah ?? "horizontal");
+  const [ukuran, setUkuran] = useState<number>(awal?.ukuran ?? UKURAN_LABEL_BAWAAN);
+
+  const ubahUkuran = (d: number) =>
+    setUkuran((u) => Math.min(UKURAN_LABEL_MAKS, Math.max(UKURAN_LABEL_MIN, u + d)));
 
   const simpan = () => {
     const st = useGis.getState();
-    if (!text.trim()) {
+    // mode pendek: baris baru (mis. hasil tempel) diratakan jadi satu baris
+    const bersih =
+      mode === "pendek"
+        ? teks.replace(/\s*\n+\s*/g, " ").trim()
+        : teks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    if (!bersih) {
       toast.error("Teks kosong");
       return;
     }
     if (state.editId) {
-      st.updateLabel(state.editId, { text: text.trim() });
+      st.updateLabel(state.editId, { text: bersih, arah, ukuran });
       toast.success("Label diperbarui");
     } else {
-      st.addLabel({ id: uid("label"), lat: state.lat, lng: state.lng, text: text.trim(), layerId: pastikanLayerManualSekarang() });
-      toast.success("Label teks ditambahkan", { description: "Alat Teks masih menyala — klik peta lagi untuk teks berikutnya, Esc untuk berhenti" });
+      st.addLabel({ id: uid("label"), lat: state.lat, lng: state.lng, text: bersih, arah, ukuran, layerId: pastikanLayerManualSekarang() });
+      toast.success("Label teks ditambahkan", {
+        description:
+          "Alat Teks masih menyala — klik peta lagi untuk teks berikutnya, Esc untuk berhenti. Arah, paragraf & ukuran bisa diubah: klik labelnya.",
+      });
     }
     tutup();
   };
 
+  const pratinjau =
+    mode === "pendek" ? teks.replace(/\s*\n+\s*/g, " ") || "Contoh teks" : teks || "Contoh teks\nbaris kedua";
+
   return (
     <Dialog open onOpenChange={(v) => !v && tutup()}>
-      <DialogContent className="rounded-2xl sm:max-w-sm">
+      <DialogContent className="rounded-2xl sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Type className="h-5 w-5 text-primary" />
             {state.editId ? "Edit Label Teks" : "Label Teks Baru"}
           </DialogTitle>
         </DialogHeader>
+
+        {/* mode teks: pendek / paragraf */}
         <div className="space-y-1.5">
-          <Label htmlFor="lbl-text">Isi teks</Label>
-          <Input
-            id="lbl-text"
-            autoFocus
-            className="rounded-xl"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Tulis teks…"
-            maxLength={120}
-            onKeyDown={(e) => e.key === "Enter" && simpan()}
-          />
+          <Label>Mode teks</Label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMode("pendek")}
+              className={`h-9 rounded-xl text-xs font-semibold border transition-colors ${
+                mode === "pendek" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              Teks Pendek (1 baris)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("paragraf")}
+              className={`h-9 rounded-xl text-xs font-semibold border transition-colors ${
+                mode === "paragraf" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              Paragraf (bersusun)
+            </button>
+          </div>
+
+          {mode === "pendek" ? (
+            <Input
+              id="lbl-text"
+              autoFocus
+              className="rounded-xl"
+              value={teks}
+              onChange={(e) => setTeks(e.target.value)}
+              placeholder="Tulis teks…"
+              maxLength={120}
+              onKeyDown={(e) => e.key === "Enter" && simpan()}
+            />
+          ) : (
+            <Textarea
+              id="lbl-text"
+              autoFocus
+              className="rounded-xl min-h-[96px]"
+              value={teks}
+              onChange={(e) => setTeks(e.target.value)}
+              placeholder={"Tulis paragraf…\nEnter = baris baru, tulisan tersusun ke bawah"}
+              maxLength={2000}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  simpan();
+                }
+              }}
+            />
+          )}
+          <p className="text-[11px] text-slate-400">
+            {mode === "pendek" ? "Enter = simpan" : "Enter = baris baru • Ctrl+Enter = simpan"}
+          </p>
         </div>
+
+        {/* arah tulisan */}
+        <div className="space-y-1.5">
+          <Label>Arah tulisan</Label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setArah("horizontal")}
+              className={`h-9 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-colors ${
+                arah === "horizontal" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              <MoveHorizontal className="h-4 w-4" /> Horizontal →
+            </button>
+            <button
+              type="button"
+              onClick={() => setArah("vertikal")}
+              className={`h-9 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-colors ${
+                arah === "vertikal" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              <MoveVertical className="h-4 w-4" /> Vertikal ↓
+            </button>
+          </div>
+        </div>
+
+        {/* ukuran huruf */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="lbl-ukuran">Ukuran huruf</Label>
+            <span className="text-xs font-semibold text-blue-700 tabular-nums">{ukuran} px</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" className="h-8 w-9 p-0 font-bold" onClick={() => ubahUkuran(-2)} title="Perkecil">
+              A−
+            </Button>
+            <input
+              id="lbl-ukuran"
+              type="range"
+              min={UKURAN_LABEL_MIN}
+              max={UKURAN_LABEL_MAKS}
+              step={1}
+              value={ukuran}
+              onChange={(e) => setUkuran(Number(e.target.value))}
+              className="flex-1 accent-blue-700"
+            />
+            <Button type="button" variant="outline" size="sm" className="h-8 w-9 p-0 font-bold" onClick={() => ubahUkuran(2)} title="Perbesar">
+              A+
+            </Button>
+          </div>
+        </div>
+
+        {/* pratinjau hidup */}
+        <div className="space-y-1.5">
+          <Label>Pratinjau</Label>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 h-[76px] overflow-hidden flex items-center justify-center p-2">
+            <div className={kelasLabel({ text: pratinjau, arah })} style={{ ...cssDariGaya(gayaLabel({ ukuran })), position: "static", transform: "none" }}>
+              {pratinjau}
+            </div>
+          </div>
+        </div>
+
         <DialogFooter className="gap-2">
           {state.editId && (
             <Button
@@ -350,6 +476,12 @@ function TextForm({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Ubah string gaya "font-size:Npx" menjadi objek CSS untuk pratinjau React. */
+function cssDariGaya(gaya: string): React.CSSProperties {
+  const m = gaya.match(/font-size:(\d+)px/);
+  return m ? { fontSize: Number(m[1]) } : {};
 }
 
 /** Dialog info bentuk: penamaan hasil gambar / edit poligon & garis. */
