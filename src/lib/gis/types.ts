@@ -94,6 +94,7 @@ export type ToolMode =
   | "text"
   | "measure"
   | "select" // blok data dengan drag kotak
+  | "select-poligon" // blok data dengan menggambar poligon — semua fitur di dalamnya terpilih
   | "zoombox" // zoom ke area dengan drag kotak
   | "bulatan" // lingkaran: klik pusat + klik radius
   | "elips" // elips: klik pusat + klik jangkauan

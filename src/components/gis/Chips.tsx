@@ -1,7 +1,8 @@
 "use client";
 
 import { useGis } from "@/lib/gis/store";
-import { Check, X, Trash2, Loader2, MousePointerClick, Crop } from "lucide-react";
+import { Check, X, Trash2, Loader2, MousePointerClick, Crop, MapPin, Hexagon, Minus, Type, Circle, Egg, CornerUpLeft, CornerUpRight, PenTool, Ruler, Lasso } from "lucide-react";
+import { toast } from "sonner";
 import { useRef, useState, useEffect, useCallback } from "react";
 
 /** Chip mengambang di tengah-atas: panduan gambar + tombol Selesai/Batal. */
@@ -10,45 +11,72 @@ export function DrawChip() {
   const pendingCount = useGis((s) => s.pendingVertices.length);
   const finishDraw = useGis((s) => s.finishDraw);
   const cancelDraw = useGis((s) => s.cancelDraw);
+  const selesaikanBlokPoligon = useGis((s) => s.selesaikanBlokPoligon);
 
   if (!tool) return null;
 
   const info: Record<string, string> = {
-    point: "Klik lokasi di peta untuk menambah titik",
-    text: "Klik lokasi di peta untuk menambah label teks",
-    "poly-closed": `Poligon tertutup — klik titik sudut (min. 3). Sudut terakhir otomatis tersambung ke titik pertama saat Selesai.`,
-    "poly-open": `Garis terbuka — klik titik jalur (min. 2). Titik terakhir TIDAK tersambung ke titik pertama.`,
+    point: "Klik lokasi di peta untuk menambah titik — bisa terus-menerus. Esc / klik tombol Titik lagi untuk berhenti.",
+    text: "Klik lokasi di peta untuk menambah label teks — bisa terus-menerus. Esc / klik tombol Teks lagi untuk berhenti.",
+    "poly-closed":
+      "Poligon tertutup — klik titik sudut (min. 3), lalu Selesai. Sudut terakhir otomatis tersambung ke titik pertama. Alat tetap aktif untuk menggambar poligon berikutnya — Esc untuk berhenti.",
+    "poly-open":
+      "Garis terbuka — klik titik jalur (min. 2), lalu Selesai. Titik terakhir TIDAK tersambung ke titik pertama. Alat tetap aktif — Esc untuk berhenti.",
     measure: "Ukur jarak — klik titik 1, titik 2, dan seterusnya",
     select: "Blok data — drag kotak di peta untuk memblok titik/poligon. Tahan Shift saat drag untuk menambah pilihan. Klik satu titik = pilih/hilangkan.",
+    "select-poligon":
+      "Blok poligon — klik titik sudut area (min. 3), lalu klik titik pertama lagi / dobel-klik untuk menutup. Semua titik & poligon/garis DI DALAM poligon otomatis terpilih. Shift saat menutup = tambah ke pilihan. Alat tetap aktif — Esc untuk berhenti.",
     zoombox: "Zoom kotak — drag area di peta untuk memperbesar ke area tersebut",
+    bulatan:
+      "Bulatan — klik titik awal, gerakkan mouse (pratinjau + garis radius tampil), klik untuk jadi. Atau isi radius manual di panel bawah → 1 klik langsung jadi. Alat tetap aktif — Esc untuk berhenti.",
+    elips: "Elips — klik titik awal (pusat), gerakkan mouse (pratinjau elips tampil), klik untuk jadi. Alat tetap aktif — Esc untuk berhenti.",
+    "lengkung-kiri": "Lengkung kiri — klik titik awal, gerakkan mouse (busur pratinjau tampil), klik di ujung busur. Alat tetap aktif — Esc untuk berhenti.",
+    "lengkung-kanan": "Lengkung kanan — klik titik awal, gerakkan mouse (busur pratinjau tampil), klik di ujung busur. Alat tetap aktif — Esc untuk berhenti.",
+    "edit-bentuk":
+      "Edit bentuk — klik poligon/garis di peta: seret kotak oranye = pindah titik • seret bulat biru = lengkungkan ruas • Alt+klik kotak = hapus titik. Esc untuk berhenti.",
   };
+
+  const IkonChip =
+    tool === "select" ? MousePointerClick : tool === "select-poligon" ? Lasso : tool === "zoombox" ? Crop : tool === "point" ? MapPin : tool === "poly-closed" ? Hexagon : tool === "poly-open" ? Minus : tool === "text" ? Type : tool === "bulatan" ? Circle : tool === "elips" ? Egg : tool === "lengkung-kiri" ? CornerUpLeft : tool === "lengkung-kanan" ? CornerUpRight : tool === "edit-bentuk" ? PenTool : tool === "measure" ? Ruler : null;
 
   const alatDragKotak = tool === "select" || tool === "zoombox";
 
-  const minimal = tool === "poly-closed" ? 3 : tool === "poly-open" ? 2 : 0;
+  const minimal = tool === "poly-closed" || tool === "select-poligon" ? 3 : tool === "poly-open" ? 2 : 0;
   const bisaSelesai =
     (tool === "poly-closed" && pendingCount >= 3) ||
-    (tool === "poly-open" && pendingCount >= 2);
+    (tool === "poly-open" && pendingCount >= 2) ||
+    (tool === "select-poligon" && pendingCount >= 3);
+
+  const klikSelesai = () => {
+    if (tool !== "select-poligon") {
+      finishDraw();
+      return;
+    }
+    const hasil = selesaikanBlokPoligon(false);
+    if (!hasil) {
+      toast.info("Minimal 3 titik poligon", { description: "Klik minimal 3 titik sudut di peta sebelum menutup poligon blok." });
+      return;
+    }
+    toast.success(`${hasil.total} fitur terblok poligon`, {
+      description: `${hasil.titik} titik + ${hasil.bentuk} poligon/garis ada di dalam poligon. Total terpilih: ${hasil.total}. Alat masih aktif — Esc untuk berhenti.`,
+    });
+  };
 
   return (
     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[900] print:hidden" role="status">
       <div className="flex items-center gap-2 rounded-full bg-white/95 backdrop-blur border border-blue-200 shadow-lg pl-4 pr-1.5 py-1.5">
         <span className="text-xs text-slate-700 flex items-center gap-1.5 max-w-[min(80vw,560px)]">
-          {alatDragKotak ? (
-            tool === "select" ? (
-              <MousePointerClick className="h-3.5 w-3.5 shrink-0 text-blue-600" />
-            ) : (
-              <Crop className="h-3.5 w-3.5 shrink-0 text-violet-600" />
-            )
+          {IkonChip ? (
+            <IkonChip className={`h-3.5 w-3.5 shrink-0 ${alatDragKotak ? (tool === "select" ? "text-blue-600" : "text-violet-600") : "text-blue-600"}`} />
           ) : (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue-600" />
           )}
           <span className="line-clamp-2">{info[tool]}</span>
-          {pendingCount > 0 && <b className="text-blue-700">• {pendingCount} titik</b>}
+          {pendingCount > 0 && <b className={tool === "select-poligon" ? "text-violet-700" : "text-blue-700"}>• {pendingCount} titik</b>}
         </span>
-        {(tool === "poly-closed" || tool === "poly-open" || tool === "measure") && (
+        {(tool === "poly-closed" || tool === "poly-open" || tool === "measure" || tool === "select-poligon") && (
           <button
-            onClick={finishDraw}
+            onClick={klikSelesai}
             disabled={minimal > 0 && !bisaSelesai}
             className="flex items-center gap-1 rounded-full bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >

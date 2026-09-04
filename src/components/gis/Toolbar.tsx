@@ -27,6 +27,7 @@ import {
   Sparkles,
   FileSpreadsheet,
   BoxSelect,
+  Lasso,
   Trash2,
   Crop,
   Circle,
@@ -141,16 +142,16 @@ export default function Toolbar() {
     {
       nama: "Gambar",
       items: [
-        { label: "Titik", icon: MapPin, title: "Tambah titik koordinat (klik peta)", onClick: () => setTool("point"), active: s.tool === "point" },
-        { label: "Poligon", icon: Hexagon, title: "Poligon tertutup (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-closed"), active: s.tool === "poly-closed" },
-        { label: "Garis", icon: Minus, title: "Poligon/garis terbuka (klik titik-titik, lalu Selesai)", onClick: () => setTool("poly-open"), active: s.tool === "poly-open" },
+        { label: "Titik", icon: MapPin, title: "Tambah titik koordinat (klik peta) — alat tetap menyala untuk titik berikutnya; Esc atau klik tombol ini lagi untuk berhenti", onClick: () => setTool("point"), active: s.tool === "point" },
+        { label: "Poligon", icon: Hexagon, title: "Poligon tertutup (klik titik-titik, lalu Selesai) — alat tetap menyala, bisa langsung menggambar poligon berikutnya; Esc untuk berhenti", onClick: () => setTool("poly-closed"), active: s.tool === "poly-closed" },
+        { label: "Garis", icon: Minus, title: "Poligon/garis terbuka (klik titik-titik, lalu Selesai) — alat tetap menyala untuk garis berikutnya; Esc untuk berhenti", onClick: () => setTool("poly-open"), active: s.tool === "poly-open" },
         { label: "Dari Titik", icon: Waypoints, title: "Buat poligon/garis otomatis dari titik yang sudah ada — pilih titik satu per satu (urutan pilihan = urutan sambungan), lewat daftar, input nomor, atau klik di peta", onClick: () => s.setDialog("poligonTitik", true), active: s.dialogs.poligonTitik },
-        { label: "Teks", icon: Type, title: "Tambah label teks (klik peta)", onClick: () => setTool("text"), active: s.tool === "text" },
-        { label: "Bulatan", icon: Circle, title: "Buat lingkaran — klik pusat, lalu klik radius. Bisa juga isi radius manual (meter) di panel atas peta lalu cukup 1 klik", onClick: () => setTool("bulatan"), active: s.tool === "bulatan" },
-        { label: "Elips", icon: Egg, title: "Buat elips — klik pusat, lalu klik jangkauan (kanan-atas)", onClick: () => setTool("elips"), active: s.tool === "elips" },
-        { label: "Lengkung ←", icon: CornerUpLeft, title: "Busur belok KIRI (setengah lingkaran) — klik awal, lalu klik akhir", onClick: () => setTool("lengkung-kiri"), active: s.tool === "lengkung-kiri" },
-        { label: "Lengkung →", icon: CornerUpRight, title: "Busur belok KANAN (setengah lingkaran) — klik awal, lalu klik akhir", onClick: () => setTool("lengkung-kanan"), active: s.tool === "lengkung-kanan" },
-        { label: "Edit Bentuk", icon: PenTool, title: "Edit bentuk ala AutoCAD — klik garis/poligon: seret titik, lengkungkan ruas lurus", onClick: () => setTool("edit-bentuk"), active: s.tool === "edit-bentuk" },
+        { label: "Teks", icon: Type, title: "Tambah label teks (klik peta) — alat tetap menyala untuk teks berikutnya; Esc untuk berhenti", onClick: () => setTool("text"), active: s.tool === "text" },
+        { label: "Bulatan", icon: Circle, title: "Buat lingkaran — klik titik awal, gerakkan mouse (pratinjau + garis radius tampil), klik untuk jadi. Bisa juga isi radius manual (meter) di panel atas peta lalu cukup 1 klik. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("bulatan"), active: s.tool === "bulatan" },
+        { label: "Elips", icon: Egg, title: "Buat elips — klik titik awal (pusat), gerakkan mouse (pratinjau tampil), klik untuk jadi. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("elips"), active: s.tool === "elips" },
+        { label: "Lengkung ←", icon: CornerUpLeft, title: "Busur belok KIRI (setengah lingkaran) — klik awal, gerakkan mouse, klik akhir. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("lengkung-kiri"), active: s.tool === "lengkung-kiri" },
+        { label: "Lengkung →", icon: CornerUpRight, title: "Busur belok KANAN (setengah lingkaran) — klik awal, gerakkan mouse, klik akhir. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("lengkung-kanan"), active: s.tool === "lengkung-kanan" },
+        { label: "Edit Bentuk", icon: PenTool, title: "Edit bentuk ala AutoCAD — klik garis/poligon: seret titik, lengkungkan ruas lurus. Alat tetap menyala untuk mengedit bentuk lain; Esc untuk berhenti", onClick: () => setTool("edit-bentuk"), active: s.tool === "edit-bentuk" },
       ],
     },
     {
@@ -162,6 +163,14 @@ export default function Toolbar() {
           title: "Blok data — drag kotak di peta untuk memilih titik/poligon (Shift = tambah)",
           onClick: () => setTool("select"),
           active: s.tool === "select",
+        },
+        {
+          label: "Blok Poligon",
+          icon: Lasso,
+          title:
+            "Blok poligon — gambar poligon di peta (min. 3 titik), semua titik & poligon/garis DI DALAMnya otomatis terpilih. Tutup dengan klik titik pertama lagi / dobel-klik / tombol Selesai. Shift saat menutup = tambah ke pilihan",
+          onClick: () => setTool("select-poligon"),
+          active: s.tool === "select-poligon",
         },
         {
           label: jumlahTerpilih > 0 ? `Hapus (${jumlahTerpilih})` : "Hapus",

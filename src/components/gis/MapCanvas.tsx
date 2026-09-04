@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { toast } from "sonner";
 import { Circle } from "lucide-react";
-import { useGis } from "@/lib/gis/store";
+import { adaDialogTerbuka, useGis } from "@/lib/gis/store";
 import { warnaElevasi } from "@/lib/gis/contours";
 import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
 import { ikonDivIcon } from "@/lib/gis/ikon-divicon";
@@ -28,6 +28,10 @@ function gayaTitik(sel: boolean, urut: boolean) {
 let klikFiturBarusan = false;
 // Mode drag terakhir: Shift/Ctrl ditekan saat mulai drag = tambah ke pilihan
 let dragTambah = false;
+
+// Alat gambar: saat aktif, klik pada fitur TIDAK membuka popup — klik diteruskan
+// ke peta sebagai vertiks/tarikan (mis. bulatan di sekitar titik ODP)
+const ALAT_GAMBAR = ["point", "text", "poly-closed", "poly-open", "measure", "bulatan", "elips", "lengkung-kiri", "lengkung-kanan"] as const;
 
 /** Kumpulan layer Leaflet milik peta utama (diisi sekali saat init). */
 type LayerMap = {
@@ -304,6 +308,24 @@ export default function MapCanvas() {
     el.style.cursor = tool || dialogPoligonTitik ? "crosshair" : "";
   }, [tool, dialogPoligonTitik]);
 
+  // ---------- Esc global: matikan alat aktif (alat gambar bersifat sticky) ----------
+  // Satu handler untuk SEMUA alat — sebelumnya tiap alat punya listener sendiri.
+  // Saat dialog/modal terbuka, Esc diabaikan (dipakai dialog untuk menutup diri;
+  // alat tetap menyala sehingga user bisa langsung menggambar lagi setelah dialog tertutup).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const st = useGis.getState();
+      if (adaDialogTerbuka(st.dialogs)) return;
+      if (st.tool) st.cancelDraw();
+    };
+    // fase CAPTURE: harus jalan SEBELUM handler Radix dialog (fase bubble) —
+    // kalau tidak, dialog sudah tutup dulu (state shapeInfo=null) dan guard
+    // tidak sempat melihat bahwa dialog tadi terbuka saat Esc ditekan
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   // ---------- Preferensi performa: animasi peta ----------
   useEffect(() => {
     const map = mapRef.current;
@@ -422,9 +444,6 @@ export default function MapCanvas() {
     const onWindowUp = () => {
       if (awal) selesaikan(posisiTerakhir);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") useGis.getState().setTool(null);
-    };
 
     // Shift/Ctrl saat mulai drag = tambahkan ke pilihan yang sudah ada
     const onDownShift = (e: L.LeafletMouseEvent) => {
@@ -436,18 +455,79 @@ export default function MapCanvas() {
     map.on("mousemove", onMouseMove);
     map.on("mouseup", onMouseUp);
     window.addEventListener("mouseup", onWindowUp);
-    window.addEventListener("keydown", onKey);
 
     return () => {
       map.off("mousedown", onDownShift);
       map.off("mousemove", onMouseMove);
       map.off("mouseup", onMouseUp);
       window.removeEventListener("mouseup", onWindowUp);
-      window.removeEventListener("keydown", onKey);
       if (kotak && l.temp.hasLayer(kotak)) l.temp.removeLayer(kotak);
       map.dragging.enable();
       map.doubleClickZoom.enable();
       dragTambah = false;
+    };
+  }, [tool]);
+
+  // ---------- Alat blok poligon: gambar poligon → semua fitur di dalamnya terpilih ----------
+  useEffect(() => {
+    if (tool !== "select-poligon") return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    // dobel-klik jangan men-zoom — dipakai untuk menutup poligon blok
+    map.doubleClickZoom.disable();
+    // dragging tetap HIDUP: user bisa menggeser peta di tengah menarik poligon
+
+    let terakhirSelesai = 0;
+
+    const tutupDengan = (tambah: boolean) => {
+      const st = useGis.getState();
+      const hasil = st.selesaikanBlokPoligon(tambah);
+      terakhirSelesai = Date.now();
+      if (!hasil) {
+        toast.info("Minimal 3 titik poligon", { description: "Klik minimal 3 titik sudut di peta sebelum menutup poligon blok." });
+        return;
+      }
+      toast.success(`${hasil.total} fitur terblok poligon`, {
+        description: `${hasil.titik} titik + ${hasil.bentuk} poligon/garis ada di dalam poligon${tambah ? " (ditambah ke pilihan)" : ""}. Total terpilih: ${hasil.total}. Alat masih aktif — gambar poligon lain atau Esc untuk berhenti.`,
+      });
+    };
+
+    const onKlik = (e: L.LeafletMouseEvent) => {
+      const st = useGis.getState();
+      const pv = st.pendingVertices;
+      // klik dekat titik PERTAMA (≥3 vertiks) = tutup poligon & blok
+      if (pv.length >= 3) {
+        const p1 = map.latLngToContainerPoint(pv[0]);
+        const p2 = map.latLngToContainerPoint(e.latlng);
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) < 12) {
+          tutupDengan(e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey);
+          return;
+        }
+      }
+      useGis.setState((s2) => ({
+        pendingVertices: [...s2.pendingVertices, { lat: e.latlng.lat, lng: e.latlng.lng }],
+      }));
+    };
+
+    const onDbl = (e: L.LeafletMouseEvent) => {
+      // buang 2 vertiks yang baru saja ditambahkan oleh 2 klik dobel tadi
+      useGis.setState((s2) => ({
+        pendingVertices: s2.pendingVertices.slice(0, Math.max(0, s2.pendingVertices.length - 2)),
+      }));
+      if (Date.now() - terakhirSelesai < 400) return; // sudah selesai via klik-titik-pertama
+      const st = useGis.getState();
+      if (st.pendingVertices.length >= 3) {
+        tutupDengan(e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey);
+      }
+    };
+
+    map.on("click", onKlik);
+    map.on("dblclick", onDbl);
+    return () => {
+      map.off("click", onKlik);
+      map.off("dblclick", onDbl);
+      map.doubleClickZoom.enable();
     };
   }, [tool]);
 
@@ -546,13 +626,19 @@ export default function MapCanvas() {
       vertices: LatLng[],
       titikAwal?: { lat: number; lng: number; jenis: "bulatan" | "elips"; radius?: number; rx?: number; ry?: number }
     ) => {
-      // buka dialog penamaan (alur sama dengan poligon/garis)
+      // buka dialog penamaan (alur sama dengan poligon/garis) — alat TIDAK dimatikan (sticky):
+      // setelah dialog ditutup, user bisa langsung membuat bulatan/elips/lengkung berikutnya
+      // (Esc / klik tombol alat sekali lagi = berhenti)
       useGis.setState({
-        tool: null,
         pendingVertices: [],
         pendingShapeSave: { kind, vertices, titikAwal },
         dialogs: { ...useGis.getState().dialogs, shapeInfo: { id: "pending:baru" } },
       });
+      // reset sesi tarik: jangkar & pratinjau dibersihkan, tarikan berikutnya mulai dari nol
+      awal = null;
+      pv.clearLayers();
+      pvJangkar.clearLayers();
+      petunjukLayer = null;
     };
 
     const onKlik = (e: L.LeafletMouseEvent) => {
@@ -608,16 +694,11 @@ export default function MapCanvas() {
       }
     };
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") useGis.getState().setTool(null);
-    };
     map.on("click", onKlik);
     map.on("mousemove", onMove);
-    window.addEventListener("keydown", onKey);
     return () => {
       map.off("click", onKlik);
       map.off("mousemove", onMove);
-      window.removeEventListener("keydown", onKey);
       l.temp.removeLayer(pv);
       l.temp.removeLayer(pvJangkar);
     };
@@ -788,15 +869,10 @@ export default function MapCanvas() {
       if (shapeId) akhiriSesi();
     };
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") useGis.getState().setTool(null);
-    };
     map.on("click", onKlik);
-    window.addEventListener("keydown", onKey);
 
     return () => {
       map.off("click", onKlik);
-      window.removeEventListener("keydown", onKey);
       window.removeEventListener("geokita-edit-bentuk", onEditEv);
       akhiriSesi();
     };
@@ -852,7 +928,22 @@ export default function MapCanvas() {
           st.toggleSelect(p.id);
           return;
         }
+        // blok poligon: tanpa popup — tarik poligon melewati titik ini
+        if (st.tool === "select-poligon") return;
         if (st.tool === "edit-bentuk") return; // alat edit bentuk: titik diabaikan
+        // alat gambar aktif: teruskan klik ke peta sebagai vertiks/radius/jangkar —
+        // klik marker kanvas tidak menggelembung sendiri, jadi disalurkan manual
+        if (ALAT_GAMBAR.includes(st.tool as (typeof ALAT_GAMBAR)[number])) {
+          const mapM = mapRef.current;
+          if (mapM) {
+            const rect = mapM.getContainer().getBoundingClientRect();
+            const cp = mapM.latLngToContainerPoint([p.lat, p.lng]);
+            mapM.getContainer().dispatchEvent(
+              new MouseEvent("click", { clientX: rect.left + cp.x, clientY: rect.top + cp.y, bubbles: true })
+            );
+          }
+          return;
+        }
         bukaPopupTitik(mapRef.current!, p, l);
       });
       // Label nama sesuai mode: semua / terpilih (bertanda) / sembunyi
@@ -942,13 +1033,23 @@ export default function MapCanvas() {
           fillColor: sh.color,
           fillOpacity: 0.15,
         });
-        poly.on("click", () => {
+        poly.on("click", (e: L.LeafletMouseEvent) => {
           const st = useGis.getState();
           if (st.tool === "select") {
             klikFiturBarusan = true;
             st.toggleSelect(sh.id);
             return;
           }
+          // blok poligon: klik pada poligon = vertiks poligon blok (jangan buka popup)
+          if (st.tool === "select-poligon") {
+            L.DomEvent.stopPropagation(e);
+            useGis.setState((s2) => ({
+              pendingVertices: [...s2.pendingVertices, { lat: e.latlng.lat, lng: e.latlng.lng }],
+            }));
+            return;
+          }
+          // alat gambar aktif: jangan buka popup — klik menggelembung sendiri ke peta
+          if (ALAT_GAMBAR.includes(st.tool as (typeof ALAT_GAMBAR)[number])) return;
           if (st.tool === "edit-bentuk") {
             // langsung buka sesi edit titik & lengkung untuk bentuk ini
             window.dispatchEvent(new CustomEvent("geokita-edit-bentuk", { detail: sh.id }));
@@ -976,13 +1077,23 @@ export default function MapCanvas() {
           weight: terpilih ? 4 : 2.5,
           dashArray: sh.kind === "open" ? "8 6" : undefined,
         });
-        line.on("click", () => {
+        line.on("click", (e: L.LeafletMouseEvent) => {
           const st = useGis.getState();
           if (st.tool === "select") {
             klikFiturBarusan = true;
             st.toggleSelect(sh.id);
             return;
           }
+          // blok poligon: klik pada garis = vertiks poligon blok (jangan buka popup)
+          if (st.tool === "select-poligon") {
+            L.DomEvent.stopPropagation(e);
+            useGis.setState((s2) => ({
+              pendingVertices: [...s2.pendingVertices, { lat: e.latlng.lat, lng: e.latlng.lng }],
+            }));
+            return;
+          }
+          // alat gambar aktif: jangan buka popup — klik menggelembung sendiri ke peta
+          if (ALAT_GAMBAR.includes(st.tool as (typeof ALAT_GAMBAR)[number])) return;
           if (st.tool === "edit-bentuk") {
             window.dispatchEvent(new CustomEvent("geokita-edit-bentuk", { detail: sh.id }));
             return;
@@ -1116,14 +1227,30 @@ export default function MapCanvas() {
 
     if (pendingVertices.length > 0) {
       const latlngs = pendingVertices.map((v) => [v.lat, v.lng] as [number, number]);
-      if (tool === "poly-open" && latlngs.length >= 2) {
-        L.polyline(latlngs, { color: "#2563eb", weight: 2.5, dashArray: "6 6" }).addTo(l.temp);
+      if (tool === "select-poligon") {
+        // pratinjau poligon blok: garis violet + segmen penutup ke titik pertama + titik sudut
+        if (latlngs.length >= 2) {
+          L.polyline(latlngs, { color: "#7c3aed", weight: 2.5, dashArray: "6 5" }).addTo(l.temp);
+          L.polyline([latlngs[latlngs.length - 1], latlngs[0]], {
+            color: "#7c3aed",
+            weight: 1.5,
+            dashArray: "2 8",
+            opacity: 0.55,
+          }).addTo(l.temp);
+        }
+        latlngs.forEach((ll) =>
+          L.circleMarker(ll, { radius: 4.5, color: "#6d28d9", fillColor: "#a78bfa", fillOpacity: 1, weight: 1.5 }).addTo(l.temp)
+        );
+      } else {
+        if (tool === "poly-open" && latlngs.length >= 2) {
+          L.polyline(latlngs, { color: "#2563eb", weight: 2.5, dashArray: "6 6" }).addTo(l.temp);
+        }
+        if (tool === "poly-closed" && latlngs.length >= 2) {
+          L.polyline([...latlngs, latlngs[0]], { color: "#2563eb", weight: 1.5, dashArray: "4 8", opacity: 0.6 }).addTo(l.temp);
+          L.polyline(latlngs, { color: "#2563eb", weight: 2.5, dashArray: "6 6" }).addTo(l.temp);
+        }
+        latlngs.forEach((ll) => L.circleMarker(ll, { radius: 4, color: "#1d4ed8", fillColor: "#60a5fa", fillOpacity: 1, weight: 1.5 }).addTo(l.temp));
       }
-      if (tool === "poly-closed" && latlngs.length >= 2) {
-        L.polyline([...latlngs, latlngs[0]], { color: "#2563eb", weight: 1.5, dashArray: "4 8", opacity: 0.6 }).addTo(l.temp);
-        L.polyline(latlngs, { color: "#2563eb", weight: 2.5, dashArray: "6 6" }).addTo(l.temp);
-      }
-      latlngs.forEach((ll) => L.circleMarker(ll, { radius: 4, color: "#1d4ed8", fillColor: "#60a5fa", fillOpacity: 1, weight: 1.5 }).addTo(l.temp));
     }
 
     if (measurePoints.length > 0) {

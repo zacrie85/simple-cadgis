@@ -164,6 +164,8 @@ interface GisStore {
   setSelection: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
+  /** Selesaikan blok poligon (alat Blok Poligon) — kembalikan hitungan atau null bila < 3 vertiks. */
+  selesaikanBlokPoligon: (tambah?: boolean) => { titik: number; bentuk: number; total: number } | null;
   /** Papan klip internal: salinan fitur terpilih (titik + bentuk) — tempel = duplikasi. */
   clipboard: { points: GisPoint[]; shapes: GisShape[] };
   salinTerpilih: () => { titik: number; bentuk: number };
@@ -245,14 +247,14 @@ export const useGis = create<GisStore>((set, get) => ({
   mapClick: (lat, lng) => {
     const s = get();
     const tool = s.tool;
+    // alat GAMBAR bersifat lengket (sticky): setelah simpan, alat tetap menyala agar bisa
+    // menggambar terus-menerus — nonaktif via tombol Esc atau klik tombol alatnya sekali lagi
     if (tool === "point") {
       s.setDialog("point", { mode: "create", lat, lng });
-      s.setTool(null);
       return;
     }
     if (tool === "text") {
       s.setDialog("text", { lat, lng });
-      s.setTool(null);
       return;
     }
     if (tool === "poly-closed" || tool === "poly-open") {
@@ -270,7 +272,8 @@ export const useGis = create<GisStore>((set, get) => ({
       return;
     }
     // alat blok & zoom kotak ditangani interaksi drag di MapCanvas, bukan klik
-    if (tool === "select" || tool === "zoombox") return;
+    // blok poligon: klik vertiks ditangani listener khusus MapCanvas (urutan klik & dobel-klik)
+    if (tool === "select" || tool === "zoombox" || tool === "select-poligon") return;
     // alat bentuk khusus (bulatan/elips/lengkung/edit) ditangani listener MapCanvas
     if (tool === "bulatan" || tool === "elips" || tool === "lengkung-kiri" || tool === "lengkung-kanan" || tool === "edit-bentuk") return;
     // tanpa alat: klik area kosong → bersihkan seleksi
@@ -288,13 +291,43 @@ export const useGis = create<GisStore>((set, get) => ({
     const minimal = s.tool === "poly-closed" ? 3 : 2;
     if (v.length < minimal) return;
     const kind = s.tool === "poly-closed" ? "closed" : "open";
-    // simpan sementara lalu buka dialog penamaan bentuk
+    // simpan sementara lalu buka dialog penamaan bentuk — alat TIDAK dimatikan (sticky):
+    // setelah dialog ditutup, user bisa langsung menggambar bentuk berikutnya (Esc/klik alat = berhenti)
     set({
-      tool: null,
       pendingVertices: [],
       pendingShapeSave: { kind, vertices: v },
       dialogs: { ...s.dialogs, shapeInfo: { id: "pending:baru" } },
     });
+  },
+
+  /** Selesaikan blok poligon: semua titik & poligon/garis di dalam poligon pending terpilih.
+   *  tambah = true (Shift saat menutup) → gabungkan dengan pilihan yang sudah ada.
+   *  Alat tetap aktif (sticky) agar bisa memblok area lain berturut-turut. */
+  selesaikanBlokPoligon: (tambah = false) => {
+    const s = get();
+    if (s.tool !== "select-poligon") return null;
+    const poly = s.pendingVertices;
+    if (poly.length < 3) return null;
+    const dasar = tambah ? s.selection : [];
+    const dasarSet = new Set(dasar);
+    const ids = new Set(dasar);
+    let nTitik = 0;
+    let nBentuk = 0;
+    for (const p of s.points) {
+      if (titikDalamPoligon(p, poly)) {
+        if (!dasarSet.has(p.id)) nTitik++;
+        ids.add(p.id);
+      }
+    }
+    for (const sh of s.shapes) {
+      // bentuk terpilih bila SALAH SATU vertiksnya jatuh di dalam poligon blok
+      if (sh.vertices.some((v) => titikDalamPoligon(v, poly))) {
+        if (!dasarSet.has(sh.id)) nBentuk++;
+        ids.add(sh.id);
+      }
+    }
+    set({ selection: Array.from(ids), pendingVertices: [] });
+    return { titik: nTitik, bentuk: nBentuk, total: ids.size };
   },
 
   consumePendingShape: () => {
@@ -655,6 +688,46 @@ function jarak(a: LatLng, b: LatLng): number {
   const dλ = ((b.lng - a.lng) * Math.PI) / 180;
   const h = Math.sin(dφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(dλ / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/** Titik dalam poligon (ray casting lat/lng) — dipakai blok poligon. */
+function titikDalamPoligon(p: LatLng, poly: LatLng[]): boolean {
+  let dalam = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const yi = poly[i].lat;
+    const xi = poly[i].lng;
+    const yj = poly[j].lat;
+    const xj = poly[j].lng;
+    const potong = yi > p.lat !== yj > p.lat && p.lng < ((xj - xi) * (p.lat - yi)) / (yj - yi) + xi;
+    if (potong) dalam = !dalam;
+  }
+  return dalam;
+}
+
+/** Benar bila ada dialog/modal terbuka — Esc tidak boleh mematikan alat saat dialog terbuka
+ *  (Esc dipakai dialog untuk menutup diri; alat tetap menyala). */
+export function adaDialogTerbuka(d: DialogState): boolean {
+  return (
+    d.import ||
+    d.export ||
+    d.contour ||
+    d.volume ||
+    d.view3d ||
+    d.table ||
+    d.elevasi ||
+    d.layer ||
+    d.simpan ||
+    d.muat ||
+    d.bersih ||
+    d.poligonTitik ||
+    d.optimasi ||
+    d.raster ||
+    d.ikonTitik ||
+    d.konversi ||
+    d.point !== null ||
+    d.text !== null ||
+    d.shapeInfo !== null
+  );
 }
 
 /** Poligon sementara yang sedang digambar (dipakai chip & peta). */

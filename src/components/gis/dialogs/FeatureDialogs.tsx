@@ -128,7 +128,7 @@ function PointForm({
           }
         });
       }
-      toast.success("Titik ditambahkan", { description: title.trim() || "Titik baru" });
+      toast.success("Titik ditambahkan", { description: `${title.trim() || "Titik baru"} • alat Titik masih menyala — klik peta lagi untuk titik berikutnya, Esc untuk berhenti` });
     } else {
       st.updatePoint(state.id, {
         title: title.trim() || "Titik",
@@ -298,7 +298,7 @@ function TextForm({
       toast.success("Label diperbarui");
     } else {
       st.addLabel({ id: uid("label"), lat: state.lat, lng: state.lng, text: text.trim(), layerId: pastikanLayerManualSekarang() });
-      toast.success("Label teks ditambahkan");
+      toast.success("Label teks ditambahkan", { description: "Alat Teks masih menyala — klik peta lagi untuk teks berikutnya, Esc untuk berhenti" });
     }
     tutup();
   };
@@ -360,8 +360,10 @@ export function ShapeInfoDialog() {
   if (!state) return null;
 
   const tutup = () => {
-    // jika dibatalkan saat penamaan shape baru, buang gambarannya
-    if (state.id === "pending:baru") useGis.getState().cancelDraw();
+    // jika ditutup saat penamaan shape baru, buang draft-nya — TANPA cancelDraw():
+    // alat gambar kini sticky (tetap menyala agar bisa menggambar lagi);
+    // cancelDraw justru mematikan alat setiap kali dialog simpan ditutup
+    if (state.id === "pending:baru") useGis.setState({ pendingShapeSave: null });
     setDialog("shapeInfo", null);
   };
 
@@ -394,7 +396,7 @@ function ShapeForm({
       }
       simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil);
       toast.success(pending.kind === "closed" ? "Poligon tersimpan" : "Garis tersimpan", {
-        description: title.trim() || undefined,
+        description: `${title.trim() || "Tanpa judul"} • alat gambar masih menyala — bisa langsung menggambar lagi, Esc untuk berhenti`,
       });
       // titik pertama tarikan bulatan/elips → OTOMATIS menjadi titik koordinat berikon "Titik Awal Tarikan"
       if (pending.titikAwal) {
