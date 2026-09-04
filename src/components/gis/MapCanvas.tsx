@@ -10,6 +10,7 @@ import { fmtMeter, jarakHaversine } from "@/lib/gis/geo";
 import { ikonDivIcon } from "@/lib/gis/ikon-divicon";
 import { ikonHtml } from "@/lib/gis/ikon-titik";
 import { gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
+import { htmlPanah, sudutPeta } from "@/lib/gis/panah";
 import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
 
 const RENDER_CAP = 20000; // batas keras titik dirender (data lengkap tetap di memori/tabel)
@@ -32,7 +33,7 @@ let dragTambah = false;
 
 // Alat gambar: saat aktif, klik pada fitur TIDAK membuka popup — klik diteruskan
 // ke peta sebagai vertiks/tarikan (mis. bulatan di sekitar titik ODP)
-const ALAT_GAMBAR = ["point", "text", "poly-closed", "poly-open", "measure", "bulatan", "elips", "lengkung-kiri", "lengkung-kanan"] as const;
+const ALAT_GAMBAR = ["point", "text", "poly-closed", "poly-open", "panah", "measure", "bulatan", "elips", "lengkung-kiri", "lengkung-kanan"] as const;
 
 /** Kumpulan layer Leaflet milik peta utama (diisi sekali saat init). */
 type LayerMap = {
@@ -306,8 +307,9 @@ export default function MapCanvas() {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    el.style.cursor = tool || dialogPoligonTitik ? "crosshair" : "";
-  }, [tool, dialogPoligonTitik]);
+    // mode layout: peta utama berada di balik sheet layout — biarkan kursor normal
+    el.style.cursor = view === "layout" ? "" : tool || dialogPoligonTitik ? "crosshair" : "";
+  }, [tool, dialogPoligonTitik, view]);
 
   // ---------- Esc global: matikan alat aktif (alat gambar bersifat sticky) ----------
   // Satu handler untuk SEMUA alat — sebelumnya tiap alat punya listener sendiri.
@@ -316,6 +318,10 @@ export default function MapCanvas() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // Esc di dalam kolom isian (input/textarea/select) → biarkan kolom yang menangani
+      // (mis. batal menulis keterangan layout tanpa mematikan alat)
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
       const st = useGis.getState();
       if (adaDialogTerbuka(st.dialogs)) return;
       if (st.tool) st.cancelDraw();
@@ -342,6 +348,7 @@ export default function MapCanvas() {
 
   // ---------- Alat blok seleksi & zoom kotak (drag persegi) ----------
   useEffect(() => {
+    if (view === "layout") return; // alat GAMBAR/analisis peta nonaktif saat mode layout
     if (tool !== "select" && tool !== "zoombox") return;
     const map = mapRef.current;
     const l = layerRef.current;
@@ -467,10 +474,11 @@ export default function MapCanvas() {
       map.doubleClickZoom.enable();
       dragTambah = false;
     };
-  }, [tool]);
+  }, [tool, view]);
 
   // ---------- Alat blok poligon: gambar poligon → semua fitur di dalamnya terpilih ----------
   useEffect(() => {
+    if (view === "layout") return; // nonaktif saat mode layout (anotasi ditangani LayoutView)
     if (tool !== "select-poligon") return;
     const map = mapRef.current;
     if (!map) return;
@@ -530,10 +538,11 @@ export default function MapCanvas() {
       map.off("dblclick", onDbl);
       map.doubleClickZoom.enable();
     };
-  }, [tool]);
+  }, [tool, view]);
 
   // ---------- Alat bentuk: bulatan / elips / lengkung kiri-kanan ----------
   useEffect(() => {
+    if (view === "layout") return; // nonaktif saat mode layout (anotasi ditangani LayoutView)
     if (tool !== "bulatan" && tool !== "elips" && tool !== "lengkung-kiri" && tool !== "lengkung-kanan") return;
     const map = mapRef.current;
     const l = layerRef.current;
@@ -703,10 +712,11 @@ export default function MapCanvas() {
       l.temp.removeLayer(pv);
       l.temp.removeLayer(pvJangkar);
     };
-  }, [tool]);
+  }, [tool, view]);
 
   // ---------- Alat edit bentuk: pindah titik + lengkungkan ruas lurus (ala AutoCAD) ----------
   useEffect(() => {
+    if (view === "layout") return; // nonaktif saat mode layout (anotasi ditangani LayoutView)
     if (tool !== "edit-bentuk") return;
     const map = mapRef.current;
     const l = layerRef.current;
@@ -877,7 +887,7 @@ export default function MapCanvas() {
       window.removeEventListener("geokita-edit-bentuk", onEditEv);
       akhiriSesi();
     };
-  }, [tool]);
+  }, [tool, view]);
 
   // ---------- Render titik (bangun ulang HANYA saat data/mode label/batas render berubah) ----------
   useEffect(() => {
@@ -1115,6 +1125,21 @@ export default function MapCanvas() {
           });
         }
         line.addTo(l.shapes);
+        // mata panah di ujung akhir garis (bentuk hasil alat Panah)
+        if (sh.panah && latlngs.length >= 2 && mapRef.current) {
+          const a = sh.vertices[sh.vertices.length - 2];
+          const b = sh.vertices[sh.vertices.length - 1];
+          const sudut = sudutPeta(mapRef.current, a, b);
+          L.marker([b.lat, b.lng], {
+            icon: L.divIcon({
+              className: "",
+              html: htmlPanah(sudut, terpilih ? "#f59e0b" : sh.color),
+              iconSize: [20, 20],
+              iconAnchor: [19, 10],
+            }),
+            interactive: false,
+          }).addTo(l.shapes);
+        }
       }
     }
   }, [shapes, selection, labelMode]);
@@ -1286,8 +1311,19 @@ export default function MapCanvas() {
           L.circleMarker(ll, { radius: 4.5, color: "#6d28d9", fillColor: "#a78bfa", fillOpacity: 1, weight: 1.5 }).addTo(l.temp)
         );
       } else {
-        if (tool === "poly-open" && latlngs.length >= 2) {
+        if ((tool === "poly-open" || tool === "panah") && latlngs.length >= 2) {
           L.polyline(latlngs, { color: "#2563eb", weight: 2.5, dashArray: "6 6" }).addTo(l.temp);
+        }
+        // pratinjau mata panah mengikuti ujung jalur saat alat Panah aktif
+        if (tool === "panah" && latlngs.length >= 2 && mapRef.current) {
+          const m = mapRef.current;
+          const a = latlngs[latlngs.length - 2];
+          const b = latlngs[latlngs.length - 1];
+          const sudut = sudutPeta(m, { lat: a[0], lng: a[1] }, { lat: b[0], lng: b[1] });
+          L.marker(b, {
+            icon: L.divIcon({ className: "", html: htmlPanah(sudut, "#2563eb"), iconSize: [20, 20], iconAnchor: [19, 10] }),
+            interactive: false,
+          }).addTo(l.temp);
         }
         if (tool === "poly-closed" && latlngs.length >= 2) {
           L.polyline([...latlngs, latlngs[0]], { color: "#2563eb", weight: 1.5, dashArray: "4 8", opacity: 0.6 }).addTo(l.temp);

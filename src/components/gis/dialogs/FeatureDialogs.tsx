@@ -526,8 +526,8 @@ function ShapeForm({
         tutup();
         return;
       }
-      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil);
-      toast.success(pending.kind === "closed" ? "Poligon tersimpan" : "Garis tersimpan", {
+      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil, pending.panah ?? false);
+      toast.success(pending.kind === "closed" ? "Poligon tersimpan" : pending.panah ? "Panah tersimpan" : "Garis tersimpan", {
         description: `${title.trim() || "Tanpa judul"} • alat gambar masih menyala — bisa langsung menggambar lagi, Esc untuk berhenti`,
       });
       // titik pertama tarikan bulatan/elips → OTOMATIS menjadi titik koordinat berikon "Titik Awal Tarikan"

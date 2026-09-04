@@ -34,11 +34,13 @@ import {
   Egg,
   CornerUpLeft,
   CornerUpRight,
+  MoveUpRight,
   PenTool,
   Tags,
   Tag,
   EyeOff,
   Waypoints,
+  LocateFixed,
   Gauge,
   Sticker,
   Copy,
@@ -143,10 +145,29 @@ export default function Toolbar() {
     {
       nama: "Gambar",
       items: [
-        { label: "Titik", icon: MapPin, title: "Tambah titik koordinat (klik peta) — alat tetap menyala untuk titik berikutnya; Esc atau klik tombol ini lagi untuk berhenti", onClick: () => setTool("point"), active: s.tool === "point" },
+        {
+          label: "Titik",
+          icon: MapPin,
+          title: s.view === "layout"
+            ? "Khusus tampilan Peta (butuh koordinat geografis) — klik tombol Peta untuk kembali ke peta dulu"
+            : "Tambah titik koordinat (klik peta) — alat tetap menyala untuk titik berikutnya; Esc atau klik tombol ini lagi untuk berhenti",
+          onClick: () => setTool("point"),
+          active: s.tool === "point",
+          disabled: s.view === "layout",
+        },
         { label: "Poligon", icon: Hexagon, title: "Poligon tertutup (klik titik-titik, lalu Selesai) — alat tetap menyala, bisa langsung menggambar poligon berikutnya; Esc untuk berhenti", onClick: () => setTool("poly-closed"), active: s.tool === "poly-closed" },
         { label: "Garis", icon: Minus, title: "Poligon/garis terbuka (klik titik-titik, lalu Selesai) — alat tetap menyala untuk garis berikutnya; Esc untuk berhenti", onClick: () => setTool("poly-open"), active: s.tool === "poly-open" },
-        { label: "Dari Titik", icon: Waypoints, title: "Buat poligon/garis otomatis dari titik yang sudah ada — pilih titik satu per satu (urutan pilihan = urutan sambungan), lewat daftar, input nomor, atau klik di peta", onClick: () => s.setDialog("poligonTitik", true), active: s.dialogs.poligonTitik },
+        { label: "Panah", icon: MoveUpRight, title: "Garis anak panah — klik titik jalur (min. 2), lalu Selesai; mata panah otomatis di ujung AKHIR garis (arah terakhir = arah panah). Juga bisa dipakai di Layout sebagai anotasi. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("panah"), active: s.tool === "panah" },
+        {
+          label: "Dari Titik",
+          icon: Waypoints,
+          title: s.view === "layout"
+            ? "Khusus tampilan Peta (butuh titik koordinat) — klik tombol Peta untuk kembali ke peta dulu"
+            : "Buat poligon/garis otomatis dari titik yang sudah ada — pilih titik satu per satu (urutan pilihan = urutan sambungan), lewat daftar, input nomor, atau klik di peta",
+          onClick: () => s.setDialog("poligonTitik", true),
+          active: s.dialogs.poligonTitik,
+          disabled: s.view === "layout",
+        },
         { label: "Teks", icon: Type, title: "Tambah label teks (klik peta) — pilih Teks Pendek atau Paragraf (Enter = baris baru, tersusun ke bawah), arah Horizontal/Vertikal, dan ukuran huruf. Teks jadi bisa di-resize: tarik titik biru di pojok label. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("text"), active: s.tool === "text" },
         { label: "Bulatan", icon: Circle, title: "Buat lingkaran — klik titik awal, gerakkan mouse (pratinjau + garis radius tampil), klik untuk jadi. Bisa juga isi radius manual (meter) di panel atas peta lalu cukup 1 klik. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("bulatan"), active: s.tool === "bulatan" },
         { label: "Elips", icon: Egg, title: "Buat elips — klik titik awal (pusat), gerakkan mouse (pratinjau tampil), klik untuk jadi. Alat tetap menyala; Esc untuk berhenti", onClick: () => setTool("elips"), active: s.tool === "elips" },
@@ -243,6 +264,14 @@ export default function Toolbar() {
             "Konversi koordinat — Geografis WGS84 ↔ DMS ↔ MGRS ↔ UTM semua zona ↔ Web Mercator ↔ EPSG apa pun (TM-3, RSO, dll). Satu titik atau batch + unduh CSV",
           onClick: () => s.setDialog("konversi", true),
           active: s.dialogs.konversi,
+        },
+        {
+          label: "Terdekat",
+          icon: LocateFixed,
+          title:
+            "Titik Terdekat — isi 1 koordinat + radius dalam meter (bebas diisi manual), lalu lihat semua titik dalam radius itu terurut dari yang terdekat; klik hasil untuk zoom & pilih",
+          onClick: () => s.setDialog("titikTerdekat", true),
+          active: s.dialogs.titikTerdekat,
         },
         { label: "Ukur", icon: Ruler, title: "Ukur jarak antar titik", onClick: () => setTool("measure"), active: s.tool === "measure" },
         { label: "Elevasi DEM", icon: MountainSnow, title: "Isi elevasi otomatis dari DEM satelit — semua titik kosong, atau HANYA titik yang di-blok/terpilih (grid ±90 m)", onClick: () => s.setDialog("elevasi", true), active: s.dialogs.elevasi },

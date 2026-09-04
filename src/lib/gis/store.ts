@@ -24,6 +24,8 @@ export interface GisStorePendingShape {
   vertices: LatLng[];
   /** Info titik awal tarikan (bulatan/elips) → otomatis dibuat titik koordinat berikon. */
   titikAwal?: { lat: number; lng: number; jenis: "bulatan" | "elips"; radius?: number; rx?: number; ry?: number };
+  /** Alat Panah: hasil garis diberi mata panah di ujung akhir. */
+  panah?: boolean;
 }
 
 /** Preferensi performa peta (bukan bagian proyek — disimpan terpisah di localStorage). */
@@ -70,6 +72,7 @@ export interface DialogState {
   ikonTitik: boolean; // ganti ikon penanda massal utk titik terpilih (hasil Blok)
   konversi: boolean; // menu konversi koordinat (CRS universal)
   password: boolean; // setelan password gerbang (ganti password / kunci aplikasi)
+  titikTerdekat: boolean; // pencarian titik terdekat dari koordinat dalam radius (meter)
   point: null | { mode: "create"; lat: number; lng: number } | { mode: "edit"; id: string };
   text: null | { lat: number; lng: number; editId?: string };
   shapeInfo: null | { id: string };
@@ -208,6 +211,7 @@ const DIALOG_AWAL: DialogState = {
   ikonTitik: false,
   konversi: false,
   password: false,
+  titikTerdekat: false,
   point: null,
   text: null,
   shapeInfo: null,
@@ -249,6 +253,9 @@ export const useGis = create<GisStore>((set, get) => ({
   mapClick: (lat, lng) => {
     const s = get();
     const tool = s.tool;
+    // mode layout: peta utama tersembunyi di balik sheet — semua alat GAMBAR berperan
+    // sebagai anotasi layout (ditangani LayoutView), jangan sampai klik memicu dialog peta
+    if (s.view === "layout") return;
     // alat GAMBAR bersifat lengket (sticky): setelah simpan, alat tetap menyala agar bisa
     // menggambar terus-menerus — nonaktif via tombol Esc atau klik tombol alatnya sekali lagi
     if (tool === "point") {
@@ -259,7 +266,7 @@ export const useGis = create<GisStore>((set, get) => ({
       s.setDialog("text", { lat, lng });
       return;
     }
-    if (tool === "poly-closed" || tool === "poly-open") {
+    if (tool === "poly-closed" || tool === "poly-open" || tool === "panah") {
       set({ pendingVertices: [...s.pendingVertices, { lat, lng }] });
       return;
     }
@@ -297,7 +304,7 @@ export const useGis = create<GisStore>((set, get) => ({
     // setelah dialog ditutup, user bisa langsung menggambar bentuk berikutnya (Esc/klik alat = berhenti)
     set({
       pendingVertices: [],
-      pendingShapeSave: { kind, vertices: v },
+      pendingShapeSave: { kind, vertices: v, panah: s.tool === "panah" },
       dialogs: { ...s.dialogs, shapeInfo: { id: "pending:baru" } },
     });
   },
@@ -726,6 +733,7 @@ export function adaDialogTerbuka(d: DialogState): boolean {
     d.raster ||
     d.ikonTitik ||
     d.konversi ||
+    d.titikTerdekat ||
     d.point !== null ||
     d.text !== null ||
     d.shapeInfo !== null
@@ -733,10 +741,11 @@ export function adaDialogTerbuka(d: DialogState): boolean {
 }
 
 /** Poligon sementara yang sedang digambar (dipakai chip & peta). */
-export function ambilPendingShape(): { kind: "closed" | "open"; vertices: LatLng[] } | null {
+export function ambilPendingShape(): { kind: "closed" | "open"; vertices: LatLng[]; panah?: boolean } | null {
   const { tool, pendingVertices } = useGis.getState();
   if (tool === "poly-closed") return { kind: "closed", vertices: pendingVertices };
   if (tool === "poly-open") return { kind: "open", vertices: pendingVertices };
+  if (tool === "panah") return { kind: "open", vertices: pendingVertices, panah: true };
   return null;
 }
 
@@ -752,19 +761,21 @@ export function simpanShapeDariPending(
   title: string,
   description: string,
   color: string,
-  labelTampil = false
+  labelTampil = false,
+  panah = false
 ) {
   const shape: GisShape = {
     id: uid("shape"),
     kind,
     vertices,
-    title: title || (kind === "closed" ? "Poligon" : "Garis"),
+    title: title || (kind === "closed" ? "Poligon" : panah ? "Panah" : "Garis"),
     description,
     color,
     attrs: {},
     source: "manual",
     visible: true,
     labelTampil,
+    panah: panah || undefined,
     layerId: useGis.getState().pastikanLayerManual(),
   };
   useGis.getState().addShape(shape);

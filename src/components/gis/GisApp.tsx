@@ -11,6 +11,7 @@ import { PointDialog, TextDialog, ShapeInfoDialog, IkonTitikDialog } from "./dia
 import { ContourDialog, VolumeDialog } from "./dialogs/AnalysisDialogs";
 import ElevasiDialog from "./dialogs/ElevasiDialog";
 import PoligonTitikDialog from "./dialogs/PoligonTitikDialog";
+import TitikTerdekatDialog from "./dialogs/TitikTerdekatDialog";
 import OptimasiDialog from "./dialogs/OptimasiDialog";
 import RasterDialog from "./dialogs/RasterDialog";
 import KonversiDialog from "./dialogs/KonversiDialog";
@@ -108,6 +109,7 @@ export default function GisApp() {
         <VolumeDialog />
         <ElevasiDialog />
         <PoligonTitikDialog />
+        <TitikTerdekatDialog />
         <OptimasiDialog />
         <RasterDialog />
         <KonversiDialog />

@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
 import L from "leaflet";
 import { useGis } from "@/lib/gis/store";
 import { FloatingWindow } from "./Chips";
 import { warnaElevasi } from "@/lib/gis/contours";
 import { gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
+import { segitigaPanahPx, htmlPanah, sudutPeta } from "@/lib/gis/panah";
+import { uid } from "@/lib/gis/geo";
 import { GAYA_UTARA, type GayaUtaraId } from "./NorthArrows";
-import { Printer, Move, RotateCcw, ImagePlus, X, FileDown, ImageDown } from "lucide-react";
+import { Printer, Move, RotateCcw, ImagePlus, X, FileDown, ImageDown, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Orientasi = "lanskap" | "potret";
@@ -88,6 +90,190 @@ type LegendaItem = {
 /** Tulisan tambahan buatan user di dalam legenda. */
 type ItemLegendaKustom = { id: string; teks: string; simbol: "garis" | "kotak" | "bulat" | "polos"; warna: string };
 
+/** Anotasi gambar buatan user DI ATAS sheet layout (satuan px kertas, bukan koordinat peta) —
+ *  tujuannya menambah keterangan pada layout TANPA mengubah skala peta. Ikut tercetak PDF/PNG. */
+interface AnotasiLayout {
+  id: string;
+  jenis: "garis" | "panah" | "poligon" | "bulatan" | "elips" | "lengkung" | "teks";
+  /** garis/panah/poligon: vertiks • bulatan/elips: [pusat] • lengkung: [awal, akhir] • teks: [posisi pusat] */
+  pts: { x: number; y: number }[];
+  r?: number; // radius bulatan (px kertas)
+  rx?: number; // jangkauan elips horizontal (px)
+  ry?: number; // jangkauan elips vertikal (px)
+  arah?: "kiri" | "kanan"; // belokan lengkung
+  teks?: string; // isi anotasi teks (boleh multi-baris)
+  ukuran?: number; // ukuran huruf teks (px)
+  warna: string;
+}
+
+const KUNCI_ANOTASI = "cadgis_layout_anotasi_v1";
+const WARNA_ANOTASI = ["#dc2626", "#2563eb", "#059669", "#d97706", "#7c3aed", "#0f172a"];
+/** Alat grup GAMBAR yang di mode layout berperan sebagai anotasi. */
+const ALAT_ANOTASI = ["poly-closed", "poly-open", "panah", "text", "bulatan", "elips", "lengkung-kiri", "lengkung-kanan", "edit-bentuk"];
+
+/** Panduan chip anotasi layout. */
+const INFO_ANOT: Record<string, string> = {
+  "poly-closed": "Poligon anotasi — klik titik sudut (min. 3) di layout, lalu Selesai. Digambar di atas kertas, skala peta tidak berubah.",
+  "poly-open": "Garis anotasi — klik jalur (min. 2) di layout, lalu Selesai. Skala peta tidak berubah.",
+  panah: "Panah anotasi — klik jalur (min. 2), lalu Selesai; mata panah di ujung akhir. Skala peta tidak berubah.",
+  text: "Klik lokasi di layout untuk menulis keterangan — bisa multi-baris (Enter = baris baru, Ctrl+Enter simpan).",
+  bulatan: "Bulatan anotasi — klik pusat, gerakkan mouse (pratinjau tampil), klik untuk menetapkan radius (px kertas).",
+  elips: "Elips anotasi — klik pusat, gerakkan mouse (pratinjau tampil), klik untuk menetapkan jangkauan.",
+  "lengkung-kiri": "Lengkung kiri — klik awal, gerakkan mouse, klik di ujung busur.",
+  "lengkung-kanan": "Lengkung kanan — klik awal, gerakkan mouse, klik di ujung busur.",
+  "edit-bentuk": "Edit anotasi — klik bentuk: seret titik oranye = pindah titik • seret badan = pindah semua • Alt+klik titik = hapus titik • Esc berhenti.",
+};
+
+// ============ Geometri px untuk anotasi layout ============
+
+/** Sampel busur setengah lingkaran a→b di ruang LAYAR (y ke bawah).
+ *  Kiri = sisi kiri arah jalan (sgn +1 pada koordinat layar). */
+function sampelLengkungPx(a: { x: number; y: number }, b: { x: number; y: number }, arah: "kiri" | "kanan", n = 40) {
+  const cx = (a.x + b.x) / 2;
+  const cy = (a.y + b.y) / 2;
+  const r = Math.hypot(b.x - a.x, b.y - a.y) / 2;
+  const t0 = Math.atan2(a.y - cy, a.x - cx);
+  const sgn = arah === "kiri" ? 1 : -1;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= n; i++) {
+    const ang = t0 + sgn * (i / n) * Math.PI;
+    pts.push({ x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) });
+  }
+  return pts;
+}
+
+/** Jarak px titik ke ruas layar a-b. */
+function jarakKeRuasPx(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy || 1;
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+/** Titik dalam poligon px (ray casting). */
+function dalamPoligonPx(p: { x: number; y: number }, pts: { x: number; y: number }[]): boolean {
+  let dalam = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x;
+    const yi = pts[i].y;
+    const xj = pts[j].x;
+    const yj = pts[j].y;
+    const potong = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi;
+    if (potong) dalam = !dalam;
+  }
+  return dalam;
+}
+
+/** Perkiraan kotak teks (px) untuk hit-test & posisi tombol. */
+function kotakTeks(a: AnotasiLayout) {
+  const baris = (a.teks || "").split("\n");
+  const uk = a.ukuran ?? 14;
+  const w = Math.max(24, Math.max(...baris.map((b) => b.length)) * uk * 0.6 + 10);
+  const h = Math.max(uk + 6, baris.length * uk * 1.45 + 6);
+  return { w, h };
+}
+
+/** Garis-garis sampel anotasi (untuk hit-test jarak ke ruas). */
+function ruasAnotasi(a: AnotasiLayout): { x: number; y: number }[][] {
+  switch (a.jenis) {
+    case "garis":
+    case "panah":
+      return [a.pts];
+    case "poligon":
+      return [a.pts.length ? [...a.pts, a.pts[0]] : a.pts];
+    case "lengkung":
+      return a.pts.length >= 2 ? [sampelLengkungPx(a.pts[0], a.pts[1], a.arah ?? "kiri")] : [];
+    case "bulatan": {
+      const c = a.pts[0];
+      if (!c || !a.r) return [];
+      return [Array.from({ length: 33 }, (_, i) => {
+        const ang = (i / 32) * 2 * Math.PI;
+        return { x: c.x + a.r! * Math.cos(ang), y: c.y + a.r! * Math.sin(ang) };
+      })];
+    }
+    case "elips": {
+      const c = a.pts[0];
+      if (!c || !a.rx || !a.ry) return [];
+      return [Array.from({ length: 33 }, (_, i) => {
+        const ang = (i / 32) * 2 * Math.PI;
+        return { x: c.x + a.rx! * Math.cos(ang), y: c.y + a.ry! * Math.sin(ang) };
+      })];
+    }
+    case "teks": {
+      const p = a.pts[0];
+      const { w, h } = kotakTeks(a);
+      if (!p) return [];
+      return [[
+        { x: p.x - w / 2, y: p.y - h / 2 },
+        { x: p.x + w / 2, y: p.y - h / 2 },
+        { x: p.x + w / 2, y: p.y + h / 2 },
+        { x: p.x - w / 2, y: p.y + h / 2 },
+        { x: p.x - w / 2, y: p.y - h / 2 },
+      ]];
+    }
+  }
+}
+
+/** Hit-test klik px pada anotasi. */
+function kenaAnotasi(a: AnotasiLayout, p: { x: number; y: number }): boolean {
+  const c = a.pts[0];
+  if (a.jenis === "bulatan" && c && a.r) {
+    return Math.hypot(p.x - c.x, p.y - c.y) <= a.r + 7;
+  }
+  if (a.jenis === "elips" && c && a.rx && a.ry) {
+    const dx = (p.x - c.x) / (a.rx + 7);
+    const dy = (p.y - c.y) / (a.ry + 7);
+    return dx * dx + dy * dy <= 1.15;
+  }
+  if (a.jenis === "teks" && c) {
+    const { w, h } = kotakTeks(a);
+    return Math.abs(p.x - c.x) <= w / 2 + 4 && Math.abs(p.y - c.y) <= h / 2 + 4;
+  }
+  if (a.jenis === "poligon" && a.pts.length >= 3 && dalamPoligonPx(p, a.pts)) return true;
+  return ruasAnotasi(a).some((garis) => {
+    for (let i = 0; i < garis.length - 1; i++) {
+      if (jarakKeRuasPx(p, garis[i], garis[i + 1]) < 9) return true;
+    }
+    return false;
+  });
+}
+
+/** SVG satu anotasi bentuk (teks dirender terpisah sebagai HTML). */
+function AnotBentuk({ a, terpilih }: { a: AnotasiLayout; terpilih: boolean }) {
+  const warna = terpilih ? "#f59e0b" : a.warna;
+  const koordinat = a.pts.map((p) => `${p.x},${p.y}`).join(" ");
+  if ((a.jenis === "garis" || a.jenis === "panah") && a.pts.length >= 2) {
+    const ujung = a.pts[a.pts.length - 1];
+    const sebelum = a.pts[a.pts.length - 2];
+    return (
+      <g>
+        <polyline points={koordinat} fill="none" stroke={warna} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        {a.jenis === "panah" && (
+          <polygon points={segitigaPanahPx(sebelum.x, sebelum.y, ujung.x, ujung.y)} fill={warna} stroke="white" strokeWidth={0.8} strokeLinejoin="round" />
+        )}
+      </g>
+    );
+  }
+  if (a.jenis === "poligon" && a.pts.length >= 3) {
+    return <polygon points={koordinat} fill={warna} fillOpacity={0.12} stroke={warna} strokeWidth={2} strokeLinejoin="round" />;
+  }
+  if (a.jenis === "bulatan" && a.pts[0] && a.r) {
+    return <circle cx={a.pts[0].x} cy={a.pts[0].y} r={a.r} fill={warna} fillOpacity={0.1} stroke={warna} strokeWidth={2} />;
+  }
+  if (a.jenis === "elips" && a.pts[0] && a.rx && a.ry) {
+    return <ellipse cx={a.pts[0].x} cy={a.pts[0].y} rx={a.rx} ry={a.ry} fill={warna} fillOpacity={0.1} stroke={warna} strokeWidth={2} />;
+  }
+  if (a.jenis === "lengkung" && a.pts.length >= 2) {
+    const d = sampelLengkungPx(a.pts[0], a.pts[1], a.arah ?? "kiri")
+      .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+      .join(" ");
+    return <path d={d} fill="none" stroke={warna} strokeWidth={2.5} strokeLinecap="round" />;
+  }
+  return null;
+}
+
 /** Simbol kecil legenda yang meniru penampilan data di peta. */
 function SimbolLegenda({ jenis, warna }: { jenis: LegendaItem["jenis"]; warna: string }) {
   if (jenis === "titik" || jenis === "bulat")
@@ -125,6 +311,7 @@ export default function LayoutView() {
   const contours = useGis((s) => s.contours);
   const basemap = useGis((s) => s.basemap);
   const view = useGis((s) => s.view);
+  const tool = useGis((s) => s.tool);
 
   const [judul, setJudul] = useState("PETA KERJA GEOKITA");
   const [subJudul, setSubJudul] = useState("Skala • Tanggal: " + new Date().toLocaleDateString("id-ID"));
@@ -177,6 +364,44 @@ export default function LayoutView() {
   const labelGridRef = useRef<HTMLDivElement | null>(null);
   const gridOptRef = useRef({ aktif: false, mode: "garis" as "garis" | "tick", interval: 1 / 60 });
   const perbaruiGridRef = useRef<() => void>(() => {});
+
+  // ---------- Anotasi GAMBAR di sheet layout (grup Gambar dipakai langsung di layout) ----------
+  const [anotasi, setAnotasi] = useState<AnotasiLayout[]>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem(KUNCI_ANOTASI) || "[]");
+      return Array.isArray(arr) ? (arr as AnotasiLayout[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [anotasiTampil, setAnotasiTampil] = useState(true);
+  const [warnaAnot, setWarnaAnot] = useState(WARNA_ANOTASI[0]);
+  const [pendingAnot, setPendingAnot] = useState<{ x: number; y: number }[]>([]);
+  const [kursorAnot, setKursorAnot] = useState<{ x: number; y: number } | null>(null);
+  const [anotPilihId, setAnotPilihId] = useState<string | null>(null);
+  const [teksDraft, setTeksDraft] = useState<null | { x: number; y: number; teks: string; ukuran: number; warna: string; editId?: string }>(null);
+  const [konfirmHapusAnot, setKonfirmHapusAnot] = useState(false);
+  const anotSeretRef = useRef<null | { id: string; mulai: { x: number; y: number }; asal: { x: number; y: number }[]; jalan: boolean }>(null);
+  const anotVertexRef = useRef<null | { id: string; idx: number }>(null);
+  const anotUkurRef = useRef<null | { id: string; jenis: "r" | "rx" | "ry" }>(null);
+
+  // anotasi tersimpan otomatis di browser — hilang hanya bila dihapus manual / Bersihkan cache
+  useEffect(() => {
+    try {
+      localStorage.setItem(KUNCI_ANOTASI, JSON.stringify(anotasi));
+    } catch {
+      // kuota penuh — anotasi tetap tampil di sesi ini
+    }
+  }, [anotasi]);
+
+  // ganti alat / pindah tampilan → bersihkan sesi menggambar anotasi
+  useEffect(() => {
+    setPendingAnot([]);
+    setKursorAnot(null);
+    setTeksDraft(null);
+    if (tool !== "edit-bentuk") setAnotPilihId(null);
+    setKonfirmHapusAnot(false);
+  }, [tool, view]);
 
   // ---------- inisialisasi peta layout (menunggu div tersedia) ----------
   useEffect(() => {
@@ -274,6 +499,21 @@ export default function LayoutView() {
           L.polygon(latlngs, { color: sh.color, weight: 2, fillOpacity: 0.15 }).addTo(layer);
         } else if (latlngs.length >= 2) {
           L.polyline(latlngs, { color: sh.color, weight: 2.5 }).addTo(layer);
+          // mata panah ikut tampil di layout (bentuk hasil alat Panah)
+          if (sh.panah) {
+            const a = sh.vertices[sh.vertices.length - 2];
+            const b = sh.vertices[sh.vertices.length - 1];
+            const sudut = sudutPeta(map, a, b);
+            L.marker([b.lat, b.lng], {
+              icon: L.divIcon({
+                className: "",
+                html: htmlPanah(sudut, sh.color),
+                iconSize: [20, 20],
+                iconAnchor: [19, 10],
+              }),
+              interactive: false,
+            }).addTo(layer);
+          }
         }
       }
     }
@@ -797,6 +1037,198 @@ export default function LayoutView() {
     resizeFotoRef.current = null;
   };
 
+  // ---------- handler anotasi layout (alat grup Gambar dipakai di atas sheet) ----------
+  /** Alat grup Gambar yang sedang aktif sebagai anotasi layout. */
+  const alatAnotAktif = view === "layout" && !!tool && ALAT_ANOTASI.includes(tool);
+  const anotPilih = anotPilihId ? anotasi.find((a) => a.id === anotPilihId) ?? null : null;
+  const bisaSelesaiAnot =
+    (tool === "poly-closed" && pendingAnot.length >= 3) ||
+    ((tool === "poly-open" || tool === "panah") && pendingAnot.length >= 2);
+
+  /** Kursor ke koordinat px sheet. */
+  const posisiSheet = (e: { clientX: number; clientY: number }) => {
+    const sheet = sheetRef.current;
+    if (!sheet) return null;
+    const r = sheet.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+
+  const simpanAnot = (a: Omit<AnotasiLayout, "id">) => {
+    setAnotasi((prev) => [...prev, { ...a, id: uid("anot") }]);
+    if (!anotasiTampil) setAnotasiTampil(true);
+  };
+
+  const hapusAnot = (id: string) => {
+    setAnotasi((prev) => prev.filter((x) => x.id !== id));
+    setAnotPilihId((cur) => (cur === id ? null : cur));
+  };
+
+  /** Tombol Selesai chip: jadikan poligon/garis/panah anotasi sungguhan (alat tetap menyala). */
+  const selesaikanAnot = () => {
+    if (tool === "poly-closed") {
+      if (pendingAnot.length >= 3) simpanAnot({ jenis: "poligon", pts: pendingAnot, warna: warnaAnot });
+      setPendingAnot([]);
+    } else if (tool === "poly-open" || tool === "panah") {
+      if (pendingAnot.length >= 2) simpanAnot({ jenis: tool === "panah" ? "panah" : "garis", pts: pendingAnot, warna: warnaAnot });
+      setPendingAnot([]);
+    }
+  };
+
+  /** Klik di sheet: tambahkan vertiks / selesaikan bentuk 2-klik / buka form teks. */
+  const onAnotKlik = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!alatAnotAktif || tool === "edit-bentuk") return;
+    const p = posisiSheet(e);
+    if (!p) return;
+    if (tool === "poly-closed" || tool === "poly-open" || tool === "panah") {
+      setPendingAnot((prev) => [...prev, p]);
+    } else if (tool === "bulatan" || tool === "elips") {
+      if (pendingAnot.length === 0) {
+        setPendingAnot([p]);
+      } else {
+        const c = pendingAnot[0];
+        if (tool === "bulatan") {
+          const r = Math.hypot(p.x - c.x, p.y - c.y);
+          if (r < 3) {
+            toast.error("Bulatan terlalu kecil", { description: "Klik lebih jauh dari pusat." });
+            return;
+          }
+          simpanAnot({ jenis: "bulatan", pts: [c], r, warna: warnaAnot });
+        } else {
+          const rx = Math.abs(p.x - c.x);
+          const ry = Math.abs(p.y - c.y);
+          if (rx < 3 && ry < 3) {
+            toast.error("Elips terlalu kecil", { description: "Klik lebih jauh dari pusat." });
+            return;
+          }
+          simpanAnot({ jenis: "elips", pts: [c], rx, ry, warna: warnaAnot });
+        }
+        setPendingAnot([]);
+      }
+    } else if (tool === "lengkung-kiri" || tool === "lengkung-kanan") {
+      if (pendingAnot.length === 0) {
+        setPendingAnot([p]);
+      } else {
+        const a = pendingAnot[0];
+        if (Math.hypot(p.x - a.x, p.y - a.y) < 6) {
+          toast.error("Busur terlalu kecil", { description: "Klik awal dan akhir lebih berjauhan." });
+          return;
+        }
+        simpanAnot({ jenis: "lengkung", pts: [a, p], arah: tool === "lengkung-kiri" ? "kiri" : "kanan", warna: warnaAnot });
+        setPendingAnot([]);
+      }
+    } else if (tool === "text") {
+      setTeksDraft({ x: p.x, y: p.y, teks: "", ukuran: 14, warna: warnaAnot });
+    }
+  };
+
+  const simpanTeksDraft = () => {
+    if (!teksDraft) return;
+    const teks = teksDraft.teks.trim();
+    if (!teks) {
+      setTeksDraft(null);
+      return;
+    }
+    if (teksDraft.editId) {
+      const editId = teksDraft.editId;
+      setAnotasi((prev) => prev.map((a) => (a.id === editId ? { ...a, teks, ukuran: teksDraft.ukuran, warna: teksDraft.warna } : a)));
+    } else {
+      simpanAnot({ jenis: "teks", pts: [{ x: teksDraft.x, y: teksDraft.y }], teks, ukuran: teksDraft.ukuran, warna: teksDraft.warna });
+    }
+    setTeksDraft(null);
+    toast.success("Keterangan layout tersimpan", { description: "Terpilih lewat alat Edit Bentuk untuk memindah/mengubah." });
+  };
+
+  /** Klik pada sheet saat alat Edit Bentuk: pilih anotasi (drag badan = pindah semua). */
+  const onAnotDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (tool !== "edit-bentuk") return;
+    const p = posisiSheet(e);
+    if (!p) return;
+    const kena = anotasiTampil ? [...anotasi].reverse().find((a) => kenaAnotasi(a, p)) : undefined;
+    setAnotPilihId(kena ? kena.id : null);
+    if (!kena) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    anotSeretRef.current = { id: kena.id, mulai: p, asal: kena.pts.map((v) => ({ ...v })), jalan: false };
+  };
+
+  const onAnotMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // geser seluruh anotasi terpilih (badan)
+    if (tool === "edit-bentuk" && anotSeretRef.current) {
+      const st = anotSeretRef.current;
+      const p = posisiSheet(e);
+      if (!p) return;
+      const dx = p.x - st.mulai.x;
+      const dy = p.y - st.mulai.y;
+      if (!st.jalan && Math.hypot(dx, dy) < 4) return;
+      st.jalan = true;
+      setAnotasi((prev) =>
+        prev.map((a) => (a.id !== st.id ? a : { ...a, pts: st.asal.map((v) => ({ x: v.x + dx, y: v.y + dy })) }))
+      );
+      return;
+    }
+    // posisi kursor untuk pratinjau bentuk 2-klik
+    if (alatAnotAktif && tool !== "edit-bentuk" && !teksDraft) {
+      setKursorAnot(posisiSheet(e));
+    }
+  };
+
+  const onAnotUp = () => {
+    anotSeretRef.current = null;
+  };
+
+  // seret titik sudut anotasi
+  const mulaiVertex = (id: string, idx: number) => (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    anotVertexRef.current = { id, idx };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const gerakVertex = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const st = anotVertexRef.current;
+    const p = posisiSheet(e);
+    if (!st || !p) return;
+    setAnotasi((prev) =>
+      prev.map((a) => (a.id !== st.id ? a : { ...a, pts: a.pts.map((v, i) => (i === st.idx ? p : v)) }))
+    );
+  };
+  const akhirVertex = () => {
+    anotVertexRef.current = null;
+  };
+  const klikVertex = (id: string, idx: number) => (e: ReactMouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (!e.altKey) return;
+    const a = anotasi.find((x) => x.id === id);
+    if (!a) return;
+    const min = a.jenis === "poligon" ? 3 : 2;
+    if (a.pts.length <= min) {
+      toast.error("Titik minimal bentuk ini tidak bisa dihapus");
+      return;
+    }
+    setAnotasi((prev) => prev.map((x) => (x.id !== id ? x : { ...x, pts: x.pts.filter((_, i) => i !== idx) })));
+  };
+
+  // seret pegangan ukur (radius bulatan / jangkauan elips)
+  const mulaiUkur = (id: string, jenis: "r" | "rx" | "ry") => (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    anotUkurRef.current = { id, jenis };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const gerakUkur = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const st = anotUkurRef.current;
+    const p = posisiSheet(e);
+    if (!st || !p) return;
+    setAnotasi((prev) =>
+      prev.map((a) => {
+        if (a.id !== st.id || !a.pts[0]) return a;
+        const c = a.pts[0];
+        if (st.jenis === "r") return { ...a, r: Math.max(3, Math.hypot(p.x - c.x, p.y - c.y)) };
+        if (st.jenis === "rx") return { ...a, rx: Math.max(3, Math.abs(p.x - c.x)) };
+        return { ...a, ry: Math.max(3, Math.abs(p.y - c.y)) };
+      })
+    );
+  };
+  const akhirUkur = () => {
+    anotUkurRef.current = null;
+  };
+
   return (
     <div className="relative flex-1 overflow-auto bg-slate-200 flex items-start justify-center p-6 print:bg-white print:p-0">
       <style>{`
@@ -986,6 +1418,359 @@ export default function LayoutView() {
             </div>
           );
         })}
+
+        {/* ===== Anotasi GAMBAR di atas sheet — ikut tercetak, skala peta tidak terganggu ===== */}
+        {(anotasiTampil || alatAnotAktif) && (
+          <div
+            className={`absolute inset-0 z-[860] ${alatAnotAktif && tool !== "edit-bentuk" ? "cursor-crosshair" : ""}`}
+            style={{ pointerEvents: alatAnotAktif ? "auto" : "none", touchAction: "none" }}
+            onClick={onAnotKlik}
+            onPointerDown={onAnotDown}
+            onPointerMove={onAnotMove}
+            onPointerUp={onAnotUp}
+            onPointerCancel={onAnotUp}
+          >
+            <svg
+              className="absolute inset-0 h-full w-full"
+              width={ukuran.w}
+              height={ukuran.h}
+              viewBox={`0 0 ${ukuran.w} ${ukuran.h}`}
+              style={{ pointerEvents: "none" }}
+            >
+              {anotasiTampil &&
+                anotasi
+                  .filter((a) => a.jenis !== "teks")
+                  .map((a) => <AnotBentuk key={a.id} a={a} terpilih={a.id === anotPilihId} />)}
+
+              {/* pratinjau bentuk yang sedang digambar */}
+              {(() => {
+                if (!alatAnotAktif) return null;
+                const k = kursorAnot;
+                if ((tool === "bulatan" || tool === "elips") && pendingAnot.length === 1 && k) {
+                  const c = pendingAnot[0];
+                  if (tool === "bulatan") {
+                    const r = Math.hypot(k.x - c.x, k.y - c.y);
+                    return (
+                      <g>
+                        <circle cx={c.x} cy={c.y} r={r} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={2} strokeDasharray="6 5" />
+                        <line x1={c.x} y1={c.y} x2={k.x} y2={k.y} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 5" />
+                        <text x={(c.x + k.x) / 2} y={(c.y + k.y) / 2 - 8} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1d4ed8" style={{ paintOrder: "stroke" }} stroke="white" strokeWidth={3}>
+                          R {Math.round(r)} px
+                        </text>
+                      </g>
+                    );
+                  }
+                  const rx = Math.abs(k.x - c.x);
+                  const ry = Math.abs(k.y - c.y);
+                  return <ellipse cx={c.x} cy={c.y} rx={Math.max(rx, 1)} ry={Math.max(ry, 1)} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={2} strokeDasharray="6 5" />;
+                }
+                if ((tool === "lengkung-kiri" || tool === "lengkung-kanan") && pendingAnot.length === 1 && k) {
+                  const d = sampelLengkungPx(pendingAnot[0], k, tool === "lengkung-kiri" ? "kiri" : "kanan")
+                    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+                    .join(" ");
+                  return <path d={d} fill="none" stroke="#2563eb" strokeWidth={2.5} strokeDasharray="6 5" />;
+                }
+                if ((tool === "poly-closed" || tool === "poly-open" || tool === "panah") && pendingAnot.length > 0) {
+                  const str = pendingAnot.map((p) => `${p.x},${p.y}`).join(" ");
+                  return (
+                    <g>
+                      {tool === "poly-closed" && pendingAnot.length >= 2 && (
+                        <polygon points={`${str} ${pendingAnot[0].x},${pendingAnot[0].y}`} fill="none" stroke="#2563eb" strokeWidth={1.5} strokeDasharray="4 8" opacity={0.6} />
+                      )}
+                      {pendingAnot.length >= 2 && <polyline points={str} fill="none" stroke="#2563eb" strokeWidth={2.5} strokeDasharray="6 6" />}
+                      {tool === "panah" && pendingAnot.length >= 2 && (
+                        <polygon
+                          points={segitigaPanahPx(
+                            pendingAnot[pendingAnot.length - 2].x,
+                            pendingAnot[pendingAnot.length - 2].y,
+                            pendingAnot[pendingAnot.length - 1].x,
+                            pendingAnot[pendingAnot.length - 1].y
+                          )}
+                          fill="#2563eb"
+                        />
+                      )}
+                      {pendingAnot.map((p, i) => (
+                        <circle key={i} cx={p.x} cy={p.y} r={4} fill="#60a5fa" stroke="#1d4ed8" strokeWidth={1.5} />
+                      ))}
+                    </g>
+                  );
+                }
+                return null;
+              })()}
+            </svg>
+
+            {/* teks anotasi — HTML agar wrap rapi (bisa multi-baris) */}
+            {anotasiTampil &&
+              anotasi
+                .filter((a) => a.jenis === "teks" && a.pts[0] && a.teks)
+                .map((a) => (
+                  <div
+                    key={a.id}
+                    className="pointer-events-none absolute select-none"
+                    style={{
+                      left: a.pts[0].x,
+                      top: a.pts[0].y,
+                      transform: "translate(-50%, -50%)",
+                      fontSize: a.ukuran ?? 14,
+                      color: a.warna,
+                      whiteSpace: "pre-wrap",
+                      maxWidth: 420,
+                      lineHeight: 1.45,
+                      fontWeight: 600,
+                      textAlign: "center",
+                      textShadow: "0 0 3px #fff, 0 0 3px #fff, -1px 0 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, 0 1px 0 #fff",
+                    }}
+                  >
+                    {a.teks}
+                  </div>
+                ))}
+
+            {/* pegangan anotasi terpilih (alat Edit Bentuk) */}
+            {tool === "edit-bentuk" && anotPilih && anotasiTampil && (() => {
+              const gayaHandle: React.CSSProperties = {
+                position: "absolute",
+                width: 12,
+                height: 12,
+                background: "#f59e0b",
+                border: "2px solid #fff",
+                borderRadius: 3,
+                boxShadow: "0 1px 3px rgba(0,0,0,.4)",
+                cursor: "move",
+                touchAction: "none",
+                pointerEvents: "auto",
+              };
+              const gayaTengah: React.CSSProperties = { ...gayaHandle, background: "#2563eb", borderRadius: 9999, width: 11, height: 11 };
+              const node: React.ReactNode[] = [];
+              if (["garis", "panah", "poligon", "lengkung"].includes(anotPilih.jenis)) {
+                anotPilih.pts.forEach((p, i) =>
+                  node.push(
+                    <div
+                      key={`v${i}`}
+                      style={{ ...gayaHandle, left: p.x - 6, top: p.y - 6 }}
+                      onPointerDown={mulaiVertex(anotPilih.id, i)}
+                      onPointerMove={gerakVertex}
+                      onPointerUp={akhirVertex}
+                      onPointerCancel={akhirVertex}
+                      onClick={klikVertex(anotPilih.id, i)}
+                      title="Seret = pindah titik • Alt+klik = hapus titik"
+                    />
+                  )
+                );
+              }
+              if ((anotPilih.jenis === "bulatan" || anotPilih.jenis === "elips") && anotPilih.pts[0]) {
+                const c = anotPilih.pts[0];
+                node.push(
+                  <div
+                    key="pusat"
+                    style={{ ...gayaTengah, left: c.x - 5.5, top: c.y - 5.5 }}
+                    onPointerDown={mulaiVertex(anotPilih.id, 0)}
+                    onPointerMove={gerakVertex}
+                    onPointerUp={akhirVertex}
+                    onPointerCancel={akhirVertex}
+                    title="Seret = pindah pusat"
+                  />
+                );
+                if (anotPilih.jenis === "bulatan" && anotPilih.r) {
+                  node.push(
+                    <div
+                      key="r"
+                      style={{ ...gayaHandle, left: c.x + anotPilih.r - 6, top: c.y - 6 }}
+                      onPointerDown={mulaiUkur(anotPilih.id, "r")}
+                      onPointerMove={gerakUkur}
+                      onPointerUp={akhirUkur}
+                      onPointerCancel={akhirUkur}
+                      title="Seret = ubah radius"
+                    />
+                  );
+                }
+                if (anotPilih.jenis === "elips" && anotPilih.rx) {
+                  node.push(
+                    <div
+                      key="rx"
+                      style={{ ...gayaHandle, left: c.x + anotPilih.rx - 6, top: c.y - 6 }}
+                      onPointerDown={mulaiUkur(anotPilih.id, "rx")}
+                      onPointerMove={gerakUkur}
+                      onPointerUp={akhirUkur}
+                      onPointerCancel={akhirUkur}
+                      title="Seret = ubah jangkauan horizontal"
+                    />
+                  );
+                }
+                if (anotPilih.jenis === "elips" && anotPilih.ry) {
+                  node.push(
+                    <div
+                      key="ry"
+                      style={{ ...gayaHandle, left: c.x - 6, top: c.y + anotPilih.ry - 6 }}
+                      onPointerDown={mulaiUkur(anotPilih.id, "ry")}
+                      onPointerMove={gerakUkur}
+                      onPointerUp={akhirUkur}
+                      onPointerCancel={akhirUkur}
+                      title="Seret = ubah jangkauan vertikal"
+                    />
+                  );
+                }
+              }
+              return <>{node}</>;
+            })()}
+
+            {/* tombol mini anotasi terpilih */}
+            {tool === "edit-bentuk" && anotPilih && anotPilih.pts[0] && anotasiTampil && (
+              <div
+                className="absolute z-[965] flex gap-1 print:hidden"
+                style={{
+                  left: anotPilih.pts[0].x,
+                  top:
+                    anotPilih.pts[0].y -
+                    (anotPilih.jenis === "teks"
+                      ? kotakTeks(anotPilih).h / 2
+                      : (anotPilih.r ?? Math.max(anotPilih.rx ?? 0, anotPilih.ry ?? 0, 20))) -
+                    12,
+                  transform: "translate(-50%, -100%)",
+                }}
+              >
+                {anotPilih.jenis === "teks" && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTeksDraft({
+                        x: anotPilih.pts[0].x,
+                        y: anotPilih.pts[0].y,
+                        teks: anotPilih.teks ?? "",
+                        ukuran: anotPilih.ukuran ?? 14,
+                        warna: anotPilih.warna,
+                        editId: anotPilih.id,
+                      });
+                    }}
+                    title="Edit tulisan"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-xs shadow hover:bg-blue-50"
+                  >
+                    ✎
+                  </button>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    hapusAnot(anotPilih.id);
+                  }}
+                  title="Hapus anotasi"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-red-600 shadow hover:bg-red-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* chip panduan anotasi (versi layout) */}
+            {alatAnotAktif && !teksDraft && (
+              <div className="absolute left-1/2 top-3 z-[950] -translate-x-1/2 print:hidden" role="status">
+                <div className="flex items-center gap-2 rounded-full border border-blue-200 bg-white/95 py-1.5 pl-4 pr-1.5 shadow-lg backdrop-blur">
+                  <span className="flex max-w-[min(72vw,540px)] items-center gap-1.5 text-xs text-slate-700">
+                    <span className="line-clamp-2">{INFO_ANOT[tool ?? ""] ?? ""}</span>
+                    {pendingAnot.length > 0 && <b className="text-blue-700">• {pendingAnot.length} titik</b>}
+                    <span className="ml-1 flex shrink-0 gap-1">
+                      {WARNA_ANOTASI.map((w) => (
+                        <button
+                          key={w}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWarnaAnot(w);
+                          }}
+                          title="Warna anotasi berikutnya"
+                          className={`h-4 w-4 rounded-full border border-black/10 ${warnaAnot === w ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
+                          style={{ backgroundColor: w }}
+                        />
+                      ))}
+                    </span>
+                  </span>
+                  {(tool === "poly-closed" || tool === "poly-open" || tool === "panah") && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        selesaikanAnot();
+                      }}
+                      disabled={!bisaSelesaiAnot}
+                      className="flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Selesai
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      useGis.getState().cancelDraw();
+                    }}
+                    className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Batal
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* form tulis/edit keterangan teks di layout */}
+            {teksDraft && (
+              <div
+                className="absolute z-[970] w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-xl print:hidden"
+                style={{ left: teksDraft.x, top: teksDraft.y }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <textarea
+                  autoFocus
+                  value={teksDraft.teks}
+                  onChange={(e) => setTeksDraft({ ...teksDraft, teks: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) simpanTeksDraft();
+                  }}
+                  rows={3}
+                  placeholder="Tulis keterangan layout… (Enter = baris baru, Ctrl+Enter simpan)"
+                  className="w-full resize-none rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="mt-1.5 flex items-center gap-1">
+                  <button
+                    onClick={() => setTeksDraft({ ...teksDraft, ukuran: Math.max(8, teksDraft.ukuran - 2) })}
+                    title="Perkecil huruf"
+                    className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
+                  >
+                    A−
+                  </button>
+                  <span className="w-8 text-center text-[10px] font-semibold text-slate-500">{teksDraft.ukuran}px</span>
+                  <button
+                    onClick={() => setTeksDraft({ ...teksDraft, ukuran: Math.min(72, teksDraft.ukuran + 2) })}
+                    title="Perbesar huruf"
+                    className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
+                  >
+                    A+
+                  </button>
+                  <span className="ml-1.5 flex gap-1">
+                    {WARNA_ANOTASI.map((w) => (
+                      <button
+                        key={w}
+                        onClick={() => setTeksDraft({ ...teksDraft, warna: w })}
+                        title="Warna teks"
+                        className={`h-4 w-4 rounded-full border border-black/10 ${teksDraft.warna === w ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
+                        style={{ backgroundColor: w }}
+                      />
+                    ))}
+                  </span>
+                  <button
+                    onClick={simpanTeksDraft}
+                    className="ml-auto rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+                  >
+                    Simpan
+                  </button>
+                  <button
+                    onClick={() => setTeksDraft(null)}
+                    className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-200"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Kaki layout */}
         <div className="absolute bottom-4 left-0 right-0 px-10 flex justify-between text-[10px] text-slate-500">
@@ -1451,6 +2236,46 @@ export default function LayoutView() {
                       Seret foto untuk memindah; seret titik biru di pojok kanan-bawah untuk mengubah ukuran bebas.
                     </p>
                   </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-slate-500">Anotasi gambar</p>
+                  {anotasi.length > 0 && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                      {anotasi.length} objek
+                    </span>
+                  )}
+                </div>
+                <label className="flex cursor-pointer items-center gap-1 text-[10px] text-slate-500 mb-1.5">
+                  <input type="checkbox" checked={anotasiTampil} onChange={(e) => setAnotasiTampil(e.target.checked)} />
+                  Tampilkan anotasi di layout &amp; hasil cetak
+                </label>
+                <p className="text-[10px] text-slate-400 mb-1.5">
+                  Pakai tombol grup <b>Gambar</b> di panel atas (Poligon, Garis, Panah, Teks, Bulatan, Elips, Lengkung,
+                  Edit Bentuk) langsung di atas layout untuk menambah keterangan — skala peta tidak terganggu dan
+                  anotasi ikut tercetak di PDF/PNG.
+                </p>
+                {anotasi.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (!konfirmHapusAnot) {
+                        setKonfirmHapusAnot(true);
+                        setTimeout(() => setKonfirmHapusAnot(false), 3000);
+                        return;
+                      }
+                      setAnotasi([]);
+                      setAnotPilihId(null);
+                      setKonfirmHapusAnot(false);
+                      toast.info("Semua anotasi layout dihapus");
+                    }}
+                    className={`w-full rounded-lg py-1.5 text-xs font-semibold ${
+                      konfirmHapusAnot ? "bg-red-600 text-white hover:bg-red-700" : "bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600"
+                    }`}
+                  >
+                    {konfirmHapusAnot ? "Yakin? Klik sekali lagi" : `Hapus semua anotasi (${anotasi.length})`}
+                  </button>
                 )}
               </div>
 

@@ -62,6 +62,8 @@ export interface GisShape {
   visible: boolean;
   labelTampil?: boolean; // tanda: label nama bentuk ini tampil pada mode "terpilih"
   layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
+  /** Garis anak panah — mata panah digambar di ujung AKHIR garis (bentuk "open"). */
+  panah?: boolean;
 }
 
 export interface GisLabel {
@@ -104,6 +106,7 @@ export type ToolMode =
   | "elips" // elips: klik pusat + klik jangkauan
   | "lengkung-kiri" // busur setengah lingkaran belok kiri: klik awal + klik akhir
   | "lengkung-kanan" // busur setengah lingkaran belok kanan: klik awal + klik akhir
+  | "panah" // garis anak panah: klik jalur (min. 2) → mata panah di ujung akhir
   | "edit-bentuk"; // edit titik bentuk + lengkungkan ruas lurus (ala Arc/Fillet AutoCAD)
 
 /** Mode tampil label nama fitur di peta (dan ikut ke KMZ/KML). */

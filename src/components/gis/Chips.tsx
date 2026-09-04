@@ -1,18 +1,21 @@
 "use client";
 
 import { useGis } from "@/lib/gis/store";
-import { Check, X, Trash2, Loader2, MousePointerClick, Crop, MapPin, Hexagon, Minus, Type, Circle, Egg, CornerUpLeft, CornerUpRight, PenTool, Ruler, Lasso } from "lucide-react";
+import { Check, X, Trash2, Loader2, MousePointerClick, Crop, MapPin, Hexagon, Minus, Type, Circle, Egg, CornerUpLeft, CornerUpRight, PenTool, Ruler, Lasso, MoveUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { useRef, useState, useEffect, useCallback } from "react";
 
 /** Chip mengambang di tengah-atas: panduan gambar + tombol Selesai/Batal. */
 export function DrawChip() {
+  const view = useGis((s) => s.view);
   const tool = useGis((s) => s.tool);
   const pendingCount = useGis((s) => s.pendingVertices.length);
   const finishDraw = useGis((s) => s.finishDraw);
   const cancelDraw = useGis((s) => s.cancelDraw);
   const selesaikanBlokPoligon = useGis((s) => s.selesaikanBlokPoligon);
 
+  // mode layout: alat GAMBAR jadi anotasi layout — chip sendiri disediakan LayoutView
+  if (view === "layout") return null;
   if (!tool) return null;
 
   const info: Record<string, string> = {
@@ -22,6 +25,8 @@ export function DrawChip() {
       "Poligon tertutup — klik titik sudut (min. 3), lalu Selesai. Sudut terakhir otomatis tersambung ke titik pertama. Alat tetap aktif untuk menggambar poligon berikutnya — Esc untuk berhenti.",
     "poly-open":
       "Garis terbuka — klik titik jalur (min. 2), lalu Selesai. Titik terakhir TIDAK tersambung ke titik pertama. Alat tetap aktif — Esc untuk berhenti.",
+    panah:
+      "Garis anak panah — klik titik jalur (min. 2), lalu Selesai. Mata panah otomatis di ujung AKHIR garis (arah terakhir = arah panah). Alat tetap aktif — Esc untuk berhenti.",
     measure: "Ukur jarak — klik titik 1, titik 2, dan seterusnya",
     select: "Blok data — drag kotak di peta untuk memblok titik/poligon. Tahan Shift saat drag untuk menambah pilihan. Klik satu titik = pilih/hilangkan.",
     "select-poligon":
@@ -37,14 +42,14 @@ export function DrawChip() {
   };
 
   const IkonChip =
-    tool === "select" ? MousePointerClick : tool === "select-poligon" ? Lasso : tool === "zoombox" ? Crop : tool === "point" ? MapPin : tool === "poly-closed" ? Hexagon : tool === "poly-open" ? Minus : tool === "text" ? Type : tool === "bulatan" ? Circle : tool === "elips" ? Egg : tool === "lengkung-kiri" ? CornerUpLeft : tool === "lengkung-kanan" ? CornerUpRight : tool === "edit-bentuk" ? PenTool : tool === "measure" ? Ruler : null;
+    tool === "select" ? MousePointerClick : tool === "select-poligon" ? Lasso : tool === "zoombox" ? Crop : tool === "point" ? MapPin : tool === "poly-closed" ? Hexagon : tool === "poly-open" ? Minus : tool === "panah" ? MoveUpRight : tool === "text" ? Type : tool === "bulatan" ? Circle : tool === "elips" ? Egg : tool === "lengkung-kiri" ? CornerUpLeft : tool === "lengkung-kanan" ? CornerUpRight : tool === "edit-bentuk" ? PenTool : tool === "measure" ? Ruler : null;
 
   const alatDragKotak = tool === "select" || tool === "zoombox";
 
-  const minimal = tool === "poly-closed" || tool === "select-poligon" ? 3 : tool === "poly-open" ? 2 : 0;
+  const minimal = tool === "poly-closed" || tool === "select-poligon" ? 3 : tool === "poly-open" || tool === "panah" ? 2 : 0;
   const bisaSelesai =
     (tool === "poly-closed" && pendingCount >= 3) ||
-    (tool === "poly-open" && pendingCount >= 2) ||
+    ((tool === "poly-open" || tool === "panah") && pendingCount >= 2) ||
     (tool === "select-poligon" && pendingCount >= 3);
 
   const klikSelesai = () => {
@@ -74,7 +79,7 @@ export function DrawChip() {
           <span className="line-clamp-2">{info[tool]}</span>
           {pendingCount > 0 && <b className={tool === "select-poligon" ? "text-violet-700" : "text-blue-700"}>• {pendingCount} titik</b>}
         </span>
-        {(tool === "poly-closed" || tool === "poly-open" || tool === "measure" || tool === "select-poligon") && (
+        {(tool === "poly-closed" || tool === "poly-open" || tool === "panah" || tool === "measure" || tool === "select-poligon") && (
           <button
             onClick={klikSelesai}
             disabled={minimal > 0 && !bisaSelesai}
@@ -98,11 +103,13 @@ export function DrawChip() {
 
 /** Chip hasil pengukuran jarak. */
 export function MeasureChip() {
+  const view = useGis((s) => s.view);
   const tool = useGis((s) => s.tool);
   const total = useGis((s) => s.measureTotal);
   const jumlah = useGis((s) => s.measurePoints.length);
   const clearMeasure = useGis((s) => s.clearMeasure);
 
+  if (view === "layout") return null;
   if (tool === "measure" || jumlah === 0) return null;
   if (jumlah < 2) return null;
 

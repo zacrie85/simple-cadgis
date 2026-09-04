@@ -857,3 +857,25 @@ Stage Summary:
 - RILIS v1.7.0 SELESAI & TERVERIFIKASI: Pages live (SW v11) + installer SIMPLE-CADGIS-Setup-1.7.0.exe (~189 MB) di GitHub Releases.
 - Isi rilis: GAMBAR › TEKS — arah tulisan Horizontal/Vertikal pilihan manual; mode Teks Pendek vs Paragraf (Enter = baris baru, tersusun ke bawah, putus otomatis maks 360px); resize manual dua cara (pegangan biru pojok kanan-bawah label di peta + slider/A± di dialog); ukuran persisten 8–144px; ikut layout cetak; kompatibel mundur.
 - Pengingat berulang: token ghp_... perlu di-revoke user.
+
+---
+Task ID: 39
+Agent: Super Z (main)
+Task: Task 39 — (1) menu Titik Terdekat (koordinat + radius meter), (2) garis anak panah di GAMBAR, (3) alat GAMBAR bisa dipakai di Layout sebagai anotasi tanpa mengganggu skala
+
+Work Log:
+- Model: ToolMode + "panah"; GisShape + `panah?: boolean` (opsional — kompatibel mundur); GisStorePendingShape.panah; finishDraw/pendingShapeSave menyimpan flag; simpanShapeDariPending(kind,...,panah).
+- Modul baru lib/gis/panah.ts: sudutPx/sudutPeta (sudut layar Mercator stabil lintas zoom), segitigaPanahPx (polygon SVG), htmlPanah (divIcon mata panah, anchor di ujung 19,10).
+- MapCanvas: ALAT_GAMBAR + panah; pratinjau panah mengikuti ujung jalur; render marker panah utk sh.panah (garis open) — warna ikut bentuk/amber saat terpilih; guard `view==="layout"` pada SEMUA efek alat peta (select/zoombox/blok-poligon/bulatan-elips-lengkung/edit-bentuk/kursor) + mapClick guard layout di store; Esc diabaikan bila target INPUT/TEXTAREA/SELECT.
+- Chips: DrawChip & MeasureChip return null saat view layout (chip anotasi versi layout disediakan LayoutView); info+Selesai utk panah.
+- Toolbar: tombol Panah (MoveUpRight) di GAMBAR; tombol Terdekat (LocateFixed) di ANALISIS; Titik & Dari Titik disabled saat layout (title menjelaskan).
+- TitikTerdekatDialog (baru, FloatingWindow): kolom 1 koordinat (parseKolomKoordinat: "lat, lng", auto-tukar bila terbalik; tombol "Peta" = pusat tampilan; dropdown salin dari titik), kolom 2 radius meter (preset 100–2000); hasil urut haversine, badge TERDEKAT, maks 300 baris, klik = flyTo+seleksi, Pilih Semua; kosong → petunjuk jarak titik terdekat global + tombol set radius.
+- LayoutView anotasi: tipe AnotasiLayout (garis/panah/poligon/bulatan/elips/lengkung/teks, px sheet); state + persist localStorage "cadgis_layout_anotasi_v1" (otomatis); overlay z-860 seluruh sheet, pointer-events auto HANYA saat alat GAMBAR aktif → skala & interaksi peta tak tersentuh; SVG bentuk + HTML teks (pre-wrap, halo putih); pratinjau live 2-klik (R label px); chip anotasi (panduan + palet 6 warna + Selesai/Batal); teks = form textarea multi-baris (Enter baris baru, Ctrl+Enter simpan, A−/A+ 8–72px, palet); edit-bentuk = hit-test px (ruas/polygon/bulatan/elips/kotak teks), pegangan vertex (seret=geser, Alt+klik=hapus) + pusat/r/rx/ry, drag badan = pindah semua, tombol mini ✎/🗑; panel: section Anotasi (tampil/sembunyi + hapus semua 2-langkah); panah shape peta ikut dirender di layout (htmlPanah+sudutPeta).
+- Uji e2e browser: gate→login; Terdekat: demo 25 titik, "-6.994292, 110.429400" R500 → 8 hasil urut 0.00–452 m, badge TERDEKAT, klik ST-6 = pilih (Hapus(1)), dialog tutup; Panah: 2 klik + Selesai → dialog → "Arah Panah Utara" → svg rotate di peta, toast "Panah tersimpan"; layout: Titik/Dari Titik disabled; teks 2-baris "Batas area kerja/Skala 1:150" merah @300,200 (newline asli); bulatan 2-klik r=50 px tersimpan benar (localStorage); drag badan +40 px → pusat bergeser, r tetap; pegangan pusat+radius muncul; hapus semua 2-langkah → 0; RELOAD → anotasi persisten & terender; teks judul "PETA SITUASI EXISTING/Diperiksa oleh: Tim Lapangan"; skala 1/7.406 → 1/7.406 (TIDAK berubah saat menggambar); ekspor PNG sukses "2246×1588 px (2× A4)" dgn anotasi.
+- DEBUG CATATAN: (a) klik sintetis awal "gagal" ternyata klik jatuh ke Panel Layout (z-1100 menutup x 608–848) dan verifikasi svg salah elemen (svg pertama sheet = kompas utara) — solusi: elementFromPoint + query svg di dalam overlay; (b) agent-browser CDP mouse memicu pointerdown+mousedown+click normal — gestur pointer capture aman.
+- sw.js v11 → v12; package.json 1.7.0 → 1.8.0. tsc + lint + build BERSIH.
+- Bukti: download/uji39-1-dialog.png, uji39-1-hasil.png, uji39-2-panah-pending.png, uji39-2-panah-jadi.png, uji39-3-teks-multibaris.png, uji39-3-bulatan2.png, uji39-4-final-bersih.png.
+
+Stage Summary:
+- FITUR BARU: (1) ANALISIS › Terdekat — cari titik dalam radius bebas dari satu koordinat, urut jarak, klik=zoom+pilih, pilih semua; (2) GAMBAR › Panah — garis multi-titik dgn mata panah ujung akhir, ikut layout & simpan proyek; (3) alat GAMBAR (Poligon/Garis/Panah/Teks/Bulatan/Elips/Lengkung/Edit) kini JALAN DI LAYOUT sebagai anotasi keterangan — px kertas, skala peta tak tersentuh, ikut PDF/PNG cetak, tersimpan otomatis di browser, kompatibel mundur.
+- Rilis v1.8.0 (tag) MENUNGGU konfirmasi user setelah uji di Pages.
