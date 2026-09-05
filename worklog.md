@@ -1086,3 +1086,25 @@ Stage Summary:
 - v1.9.0 TERBIT: https://github.com/zacrie85/simple-cadgis/releases/tag/v1.9.0 — installer Windows valid & bisa diunduh publik; Pages live dgn SW v21.
 - Isi v1.9.0 (akumulasi Task 42-48): batas impor raster 1 TB, konverter piramida otomatis, zoom ke raster, CRS luas (WGS84/UTM, SRGI2013 9470+UTM 9476-9494, TM-3 DGN95 23830-23845, DGN95 4755, Web Mercator, EPSG:9377), impor gambar+world file dgn alur pemaaf + pratinjau lokasi + sniffer format, raster tampil di Layout (toggle, legenda, Pas otomatis, ikut ekspor PDF/PNG).
 - Catatan keamanan berulang: PAT ghp_6CGl… dipakai lagi pada sesi ini — SEGERA revoke & ganti.
+
+---
+Task ID: 50
+Agent: Super Z (main)
+Task: Task 50 — upgrade ekspor: (1) tambah ekspor KML, (2) hasil KMZ & KML tersusun FOLDER per jenis (permintaan user: titik per ikon, poligon/elips/bulatan folder sendiri, garis+panah satu folder)
+
+Work Log:
+- INSIDENTAL: sandbox ter-rollback ke snapshot lama saat mulai tugas (HEAD lokal kembali ke 5c8d701 era SW v11, remote config hilang, dev server mati). Pemulihan: remote origin dipasang ulang dgn PAT → fetch → git reset --hard origin/main (0465fdb) → verifikasi LayoutView raster-pane, worldfile.ts, piramida, package.json 1.9.0, SW v21 kembali. GitHub tidak pernah terdampak (rilis v1.9.0 tetap utuh).
+- Skema: types.ts += JBentuk ("poligon"|"kotak"|"bulatan"|"elips"|"garis") + GisShape.bentuk? (data lama = kosong → ditebak). store.ts: GisStorePendingShape.bentuk, finishDraw mengisi bentuk (poly-closed→poligon, poly-open/panah→garis), simpanShapeDariPending param ke-9 bentuk (default dr kind). MapCanvas: simpanBentuk param ke-4 bentuk — bulatan→"bulatan", elips→"elips", kotak→"kotak", lengkung→"garis". FeatureDialogs meneruskan pending.bentuk; PoligonTitikDialog mengisi poligon/garis.
+- geo.ts: tebakBentuk() utk data LAMA — open→garis; 4 vertiks tepi sejajar sumbu→kotak; ≥8 vertiks radius seragam (CV<2%)→bulatan; lulus fit LSQ elips sumbu-sejajar (A·x²+B·y²=1, RMS<0,01)→elips; sisanya poligon. Proyeksi lokal equirectangular sama dgn MapCanvas.
+- kml.ts ditata ulang: folder "Titik Koordinat" ber-sub-folder PER IKON (urut DAFTAR_IKON, nama resmi ikon: Pin Merah/Biru/Ungu/Hijau, Titik Awal Tarikan, Tiang Tumpu, ODP, ODC, Closure, Handhole, Menara) + "Tanpa Ikon" + "Ikon Lainnya" (id tak dikenal); folder bentuk "Poligon"/"Kotak"/"Elips"/"Bulatan"/"Garis & Panah"; folder "Kontur" tetap; folder kosong tak ditulis. Style KML baru: titik berikon = paddle putih di-tint warna ikon (fill pertama SVG ikon), titik polos = placemark_circle biru; bentuk = LineStyle warna aplikasi (width 3) + PolyStyle isi dgn alpha isiOpasitas; LabelStyle scale 0 utk mode sembunyi/terpilih (perilaku lama terjaga). ExtendedData += Ikon (nama) & Jenis (Poligon/Kotak/Elips/Bulatan/Garis/Panah).
+- ExportDialog: Format += "kml"; helper unduhKml (kmz=zip / kml mentah, MIME application/vnd.google-earth.kml+xml); ketiga target (Titik/Bentuk/Tabel) mendukung KML — nama file Bentuk menggantikan "Poligon" krn isinya kini termasuk kotak/elips/bulatan; tombol KML (ikon FileCode indigo) + tooltip & catatan folder; kmlString import dibuang (tak terpakai).
+- SW v21 → v22. lint + tsc + build BERSIH.
+- Uji unit (scripts/uji-kml-folder.ts, bun): 36/36 LOLOS — tebakBentuk (cincin→bulatan, elips→elips, kotak→kotak, tak beraturan→poligon, busur open→garis), hierarki folder, hitungan placemark per folder, ExtendedData, style warna, KMZ = doc.kml identik, keseimbangan tag.
+- Uji e2e (agent-browser): proyek uji 7 titik (2 ODP, pin, titik-awal, tiang, 2 polos) + 9 bentuk (poligon/kotak/bulatan/elips/garis/panah BARU berbentuk + 3 bentuk LAMA tanpa field) dimuat via dialog Muat → Ekspor Tabel → KML (.kml 20 KB) & KMZ (.kmz 4,4 KB): hierarki persis sesuai permintaan — ODP masuk folder ODP, Kotak/Elips/Bulatan LAMA masuk folder benar via tebakBentuk; doc.kml ≡ KML; 16 placemark. Round-trip: KML hasil ekspor diimpor balik → 14 titik (7+7) & 18 bentuk (9+9) masuk semua. Catatan: Chromium memblokir unduhan ke-2 otomatis dr halaman sama — KMZ diuji sbg unduhan pertama setelah reload + Pulihkan Sesi.
+- Screenshot: scripts/uji-50-dialog-ekspor.png (dialog dgn tombol KML).
+
+Stage Summary:
+- Ekspor kini punya 6 format: KMZ, KML, Excel, SHP, GPX, DXF. KMZ & KML berisi dokumen identik, tersusun folder rapi per jenis fitur — siap dibuka di Google Earth dgn struktur pohon.
+- Warna & ikon titik serta warna garis/isi bentuk kini dibawa ke Google Earth (tint paddle + LineStyle/PolyStyle) — memudahkan membaca as-plan-build jaringan FO.
+- Data lama (sebelum field bentuk) tetap benar folder-nya lewat tebakBentuk; data baru menyimpan alat asalnya secara eksplisit.
+- Pelajaran sandbox: selalu cek git log/remote sebelum kerja — rollback diam-diam bisa terjadi; pemulihan = reset --hard ke origin/main.

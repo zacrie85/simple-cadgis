@@ -530,7 +530,7 @@ function ShapeForm({
         tutup();
         return;
       }
-      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil, pending.panah ?? false, bentukBerisi ? isiPct / 100 : undefined);
+      simpanShapeDariPending(pending.kind, pending.vertices, title.trim(), description.trim(), color, labelTampil, pending.panah ?? false, bentukBerisi ? isiPct / 100 : undefined, pending.bentuk);
       toast.success(pending.kind === "closed" ? "Poligon tersimpan" : pending.panah ? "Panah tersimpan" : "Garis tersimpan", {
         description: `${title.trim() || "Tanpa judul"} • alat gambar masih menyala — bisa langsung menggambar lagi, Esc untuk berhenti`,
       });

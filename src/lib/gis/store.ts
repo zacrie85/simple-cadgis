@@ -7,6 +7,7 @@ import type {
   GisLayer,
   GisPoint,
   GisShape,
+  JBentuk,
   LabelMode,
   LatLng,
   ProyekData,
@@ -27,6 +28,8 @@ export interface GisStorePendingShape {
   titikAwal?: { lat: number; lng: number; jenis: "bulatan" | "elips"; radius?: number; rx?: number; ry?: number };
   /** Alat Panah: hasil garis diberi mata panah di ujung akhir. */
   panah?: boolean;
+  /** Alat asal bentuk — ikut tersimpan di GisShape.bentuk utk pengelompokan folder ekspor. */
+  bentuk?: JBentuk;
 }
 
 /** Preferensi performa peta (bukan bagian proyek — disimpan terpisah di localStorage). */
@@ -309,7 +312,12 @@ export const useGis = create<GisStore>((set, get) => ({
     // setelah dialog ditutup, user bisa langsung menggambar bentuk berikutnya (Esc/klik alat = berhenti)
     set({
       pendingVertices: [],
-      pendingShapeSave: { kind, vertices: v, panah: s.tool === "panah" },
+      pendingShapeSave: {
+        kind,
+        vertices: v,
+        panah: s.tool === "panah",
+        bentuk: s.tool === "poly-closed" ? "poligon" : "garis",
+      },
       dialogs: { ...s.dialogs, shapeInfo: { id: "pending:baru" } },
     });
   },
@@ -772,7 +780,8 @@ export function simpanShapeDariPending(
   color: string,
   labelTampil = false,
   panah = false,
-  isiOpasitas?: number
+  isiOpasitas?: number,
+  bentuk?: JBentuk
 ) {
   const shape: GisShape = {
     id: uid("shape"),
@@ -787,6 +796,7 @@ export function simpanShapeDariPending(
     labelTampil,
     panah: panah || undefined,
     isiOpasitas,
+    bentuk: bentuk ?? (kind === "open" ? "garis" : "poligon"),
     layerId: useGis.getState().pastikanLayerManual(),
   };
   useGis.getState().addShape(shape);

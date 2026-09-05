@@ -1,5 +1,7 @@
 import { zipSync, strToU8 } from "fflate";
-import type { ContourLayer, GisPoint, GisShape, LabelMode } from "./types";
+import { DAFTAR_IKON, cariIkon } from "./ikon-titik";
+import { tebakBentuk } from "./geo";
+import type { ContourLayer, GisPoint, GisShape, JBentuk, LabelMode } from "./types";
 
 function escXml(s: string): string {
   return s
@@ -13,6 +15,22 @@ function escXml(s: string): string {
 function cdataAman(s: string): string {
   return s.replace(/\]\]>/g, "]]]]><![CDATA[>");
 }
+
+/** #rrggbb → warna KML aabbggrr (urutan KML: alpha, biru, hijau, merah). alpha 0..1. */
+function hexKeKml(hex: string, alpha = 1): string {
+  const m = /#?([0-9a-fA-F]{6})/.exec(hex.trim());
+  if (!m) return "";
+  const rr = m[1].slice(0, 2);
+  const gg = m[1].slice(2, 4);
+  const bb = m[1].slice(4, 6);
+  const aa = Math.round(Math.min(Math.max(alpha, 0), 1) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `${aa}${bb}${gg}${rr}`.toLowerCase();
+}
+
+/** Warna utama ikon titik diambil dari fill pertama SVG ikonnya (satu sumber warna). */
+const warnaIkonSvg = (svg: string): string => /fill="(#[0-9a-fA-F]{6})"/.exec(svg)?.[1] ?? "#ef4444";
 
 /**
  * Tabel HTML semua atribut untuk balloon Google Earth.
@@ -39,18 +57,28 @@ function extendedData(attrs: Record<string, string>, extra: Record<string, strin
   return `    <ExtendedData>\n${items}\n    </ExtendedData>\n`;
 }
 
+/** Label disembunyikan? mode "terpilih" → hanya fitur bertanda labelTampil. */
+const labelSembunyi = (mode: LabelMode, tanda?: boolean): boolean =>
+  mode === "sembunyi" || (mode === "terpilih" && !tanda);
+
 /**
- * Style KML untuk mengatur label nama di Google Earth sesuai mode label aplikasi:
- * - "semua"    : label tampil (tanpa style khusus)
- * - "terpilih": hanya fitur bertanda labelTampil yang labelnya tampil
- * - "sembunyi": semua label disembunyikan (LabelStyle scale 0)
+ * Style titik: warna & bentuk ikon mengikuti ikon yang dipilih di aplikasi —
+ * berikon → paddle putih di-tint warna ikonnya; polos → lingkaran biru.
+ * Dipakai bersama LabelStyle agar perilaku mode label tetap sama.
  */
-function styleLabel(mode: LabelMode, tanda?: boolean): string {
-  const tampil = mode === "semua" || (mode === "terpilih" && !!tanda);
-  return tampil ? "" : "    <Style><LabelStyle><scale>0</scale></LabelStyle></Style>\n";
+function styleTitik(p: GisPoint, labelMode: LabelMode): string {
+  const ik = cariIkon(p.ikon);
+  const ikon = ik
+    ? `<IconStyle><color>${hexKeKml(warnaIkonSvg(ik.svg))}</color><scale>1.15</scale>` +
+      `<Icon><href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon></IconStyle>`
+    : `<IconStyle><color>${hexKeKml("#3b82f6")}</color>` +
+      `<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>`;
+  const label = labelSembunyi(labelMode, p.labelTampil) ? "<LabelStyle><scale>0</scale></LabelStyle>" : "";
+  return `    <Style>${label}${ikon}</Style>\n`;
 }
 
 function pointPlacemark(p: GisPoint, labelMode: LabelMode): string {
+  const ik = cariIkon(p.ikon);
   const desc = [
     p.description ? escXml(p.description).replace(/\n/g, "<br/>") : "",
     tabelBalloon(p.attrs),
@@ -61,15 +89,27 @@ function pointPlacemark(p: GisPoint, labelMode: LabelMode): string {
     .join("<br/>");
   return `  <Placemark>
     <name>${escXml(p.title || "Titik")}</name>
-${styleLabel(labelMode, p.labelTampil)}    <description><![CDATA[${cdataAman(desc)}]]></description>
+${styleTitik(p, labelMode)}    <description><![CDATA[${cdataAman(desc)}]]></description>
 ${extendedData(p.attrs, {
   Keterangan: p.description,
+  Ikon: ik?.nama ?? "",
   Ketinggian: p.elevation != null ? String(p.elevation) : "",
   Latitude: p.lat.toFixed(6),
   Longitude: p.lng.toFixed(6),
 })}    <Point><coordinates>${p.lng},${p.lat},0</coordinates></Point>
   </Placemark>\n`;
 }
+
+/** Jenis bentuk utk pengelompokan & label Jenis: field `bentuk`, data lama ditebak. */
+const jenisBentuk = (s: GisShape): JBentuk => s.bentuk ?? tebakBentuk(s);
+
+const NAMA_JENIS: Record<JBentuk, string> = {
+  poligon: "Poligon",
+  kotak: "Kotak",
+  bulatan: "Bulatan",
+  elips: "Elips",
+  garis: "Garis",
+};
 
 function shapePlacemark(s: GisShape, labelMode: LabelMode): string {
   const coordStr = s.vertices.map((v) => `${v.lng},${v.lat},0`).join(" ");
@@ -83,10 +123,22 @@ function shapePlacemark(s: GisShape, labelMode: LabelMode): string {
   ]
     .filter(Boolean)
     .join("<br/>");
+  const jb = jenisBentuk(s);
+  const namaJenis = jb === "garis" && s.panah ? "Panah" : NAMA_JENIS[jb];
   return `  <Placemark>
     <name>${escXml(s.title)}</name>
-${styleLabel(labelMode, s.labelTampil)}    <description><![CDATA[${cdataAman(desc)}]]></description>
-${extendedData(s.attrs, { Keterangan: s.description ?? "", Jenis: s.kind === "closed" ? "Poligon" : "Garis" })}${geom}  </Placemark>\n`;
+${styleBentuk(s, labelMode)}    <description><![CDATA[${cdataAman(desc)}]]></description>
+${extendedData(s.attrs, { Keterangan: s.description ?? "", Jenis: namaJenis })}${geom}  </Placemark>\n`;
+}
+
+/** Style bentuk: warna garis & isi mengikuti warna di aplikasi (isi poligon = isiOpasitas). */
+function styleBentuk(s: GisShape, labelMode: LabelMode): string {
+  const label = labelSembunyi(labelMode, s.labelTampil) ? "<LabelStyle><scale>0</scale></LabelStyle>" : "";
+  const kml = hexKeKml(s.color);
+  const garis = kml ? `<LineStyle><color>${kml}</color><width>3</width></LineStyle>` : "";
+  const isi = s.kind === "closed" && kml ? `<PolyStyle><color>${hexKeKml(s.color, s.isiOpasitas ?? 0.15)}</color></PolyStyle>` : "";
+  if (!label && !garis && !isi) return "";
+  return `    <Style>${label}${garis}${isi}</Style>\n`;
 }
 
 function contourPlacemark(path: { elev: number; coords: { lat: number; lng: number }[] }): string {
@@ -97,7 +149,15 @@ ${extendedData({}, { Elevasi: `${path.elev} m` })}    <LineString><tessellate>1<
   </Placemark>\n`;
 }
 
-/** Bangun dokumen KML dari seleksi fitur. */
+/**
+ * Bangun dokumen KML dari seleksi fitur — tersusun FOLDER per jenis agar rapi
+ * saat dibuka di Google Earth:
+ *   Titik Koordinat → sub-folder per ikon (Pin Merah, ODP, Titik Awal Tarikan, …)
+ *   Poligon / Kotak / Elips / Bulatan → folder masing-masing
+ *   Garis & Panah → satu folder gabungan
+ *   Kontur → folder tersendiri.
+ * Folder kosong tidak ditulis.
+ */
 export function bangunKML(opts: {
   points?: GisPoint[];
   shapes?: GisShape[];
@@ -110,16 +170,50 @@ export function bangunKML(opts: {
   const contours = opts.contours ?? [];
   const labelMode = opts.labelMode ?? "semua";
   let body = "";
+
+  // ---------- Titik Koordinat: sub-folder per ikon ----------
   if (points.length) {
-    body += "  <Folder><name>Titik</name>\n";
-    body += points.map((p) => pointPlacemark(p, labelMode)).join("");
+    body += "  <Folder>\n    <name>Titik Koordinat</name>\n";
+    const kelompok = new Map<string, GisPoint[]>();
+    for (const p of points) {
+      const k = cariIkon(p.ikon) ? p.ikon! : p.ikon ? "?" : "";
+      const arr = kelompok.get(k) ?? [];
+      arr.push(p);
+      kelompok.set(k, arr);
+    }
+    for (const ik of DAFTAR_IKON) {
+      const kel = kelompok.get(ik.id);
+      if (!kel) continue;
+      body += `    <Folder><name>${escXml(ik.nama)}</name>\n`;
+      body += kel.map((p) => pointPlacemark(p, labelMode)).join("");
+      body += "    </Folder>\n";
+    }
+    const asing = kelompok.get("?");
+    if (asing) {
+      body += `    <Folder><name>${escXml("Ikon Lainnya")}</name>\n`;
+      body += asing.map((p) => pointPlacemark(p, labelMode)).join("");
+      body += "    </Folder>\n";
+    }
+    const polos = kelompok.get("");
+    if (polos) {
+      body += `    <Folder><name>${escXml("Tanpa Ikon")}</name>\n`;
+      body += polos.map((p) => pointPlacemark(p, labelMode)).join("");
+      body += "    </Folder>\n";
+    }
     body += "  </Folder>\n";
   }
-  if (shapes.length) {
-    body += `  <Folder><name>${escXml("Poligon & Garis")}</name>\n`;
-    body += shapes.map((sh) => shapePlacemark(sh, labelMode)).join("");
+
+  // ---------- Bentuk: folder per jenis ----------
+  const kelBentuk: Record<JBentuk, GisShape[]> = { poligon: [], kotak: [], bulatan: [], elips: [], garis: [] };
+  for (const sh of shapes) kelBentuk[jenisBentuk(sh)].push(sh);
+  for (const j of ["poligon", "kotak", "elips", "bulatan", "garis"] as JBentuk[]) {
+    if (!kelBentuk[j].length) continue;
+    body += `  <Folder><name>${escXml(j === "garis" ? "Garis & Panah" : NAMA_JENIS[j])}</name>\n`;
+    body += kelBentuk[j].map((sh) => shapePlacemark(sh, labelMode)).join("");
     body += "  </Folder>\n";
   }
+
+  // ---------- Kontur ----------
   if (contours.length) {
     body += "  <Folder><name>Kontur</name>\n";
     for (const layer of contours) {
@@ -128,6 +222,7 @@ export function bangunKML(opts: {
     }
     body += "  </Folder>\n";
   }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>

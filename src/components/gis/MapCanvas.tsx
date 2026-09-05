@@ -13,7 +13,7 @@ import { gayaLabel, kelasLabel } from "@/lib/gis/labelTampil";
 import { htmlPanah, sudutPeta } from "@/lib/gis/panah";
 import { ambilMetaPiramida } from "@/lib/gis/piramida-db";
 import { buatLapisanPiramida } from "@/lib/gis/piramida-layer";
-import type { GisPoint, GisShape, LatLng } from "@/lib/gis/types";
+import type { GisPoint, GisShape, JBentuk, LatLng } from "@/lib/gis/types";
 
 const RENDER_CAP = 20000; // batas keras titik dirender (data lengkap tetap di memori/tabel)
 
@@ -679,14 +679,15 @@ export default function MapCanvas() {
     const simpanBentuk = (
       kind: "closed" | "open",
       vertices: LatLng[],
-      titikAwal?: { lat: number; lng: number; jenis: "bulatan" | "elips"; radius?: number; rx?: number; ry?: number }
+      titikAwal?: { lat: number; lng: number; jenis: "bulatan" | "elips"; radius?: number; rx?: number; ry?: number },
+      bentuk?: JBentuk
     ) => {
       // buka dialog penamaan (alur sama dengan poligon/garis) — alat TIDAK dimatikan (sticky):
       // setelah dialog ditutup, user bisa langsung membuat bulatan/elips/lengkung berikutnya
       // (Esc / klik tombol alat sekali lagi = berhenti)
       useGis.setState({
         pendingVertices: [],
-        pendingShapeSave: { kind, vertices, titikAwal },
+        pendingShapeSave: { kind, vertices, titikAwal, bentuk },
         dialogs: { ...useGis.getState().dialogs, shapeInfo: { id: "pending:baru" } },
       });
       // reset sesi tarik: jangkar & pratinjau dibersihkan, tarikan berikutnya mulai dari nol
@@ -709,7 +710,7 @@ export default function MapCanvas() {
           lng: e.latlng.lng,
           jenis: "bulatan",
           radius: rm,
-        });
+        }, "bulatan");
         return;
       }
       if (!awal) {
@@ -725,7 +726,7 @@ export default function MapCanvas() {
           toast.error("Radius terlalu kecil — klik lebih jauh dari pusat.");
           return;
         }
-        simpanBentuk("closed", titikLingkaran(awal, r), { lat: awal.lat, lng: awal.lng, jenis: "bulatan", radius: r });
+        simpanBentuk("closed", titikLingkaran(awal, r), { lat: awal.lat, lng: awal.lng, jenis: "bulatan", radius: r }, "bulatan");
       } else if (tool === "elips") {
         const P = buatProyeksi(awal).xy(akhir);
         if (Math.abs(P.x) < 1 && Math.abs(P.y) < 1) {
@@ -738,7 +739,7 @@ export default function MapCanvas() {
           jenis: "elips",
           rx: Math.abs(P.x),
           ry: Math.abs(P.y),
-        });
+        }, "elips");
       } else if (tool === "kotak") {
         // kotak = poligon tertutup 4 sudut (sejajar utara) — otomatis bisa di-edit,
         // dihitung luasnya, diekspor (KMZ/SHP/DXF), dan ikut layout cetak
@@ -753,14 +754,14 @@ export default function MapCanvas() {
           { lat: awal.lat, lng: akhir.lng },
           { lat: akhir.lat, lng: akhir.lng },
           { lat: akhir.lat, lng: awal.lng },
-        ]);
+        ], undefined, "kotak");
       } else {
         const chord = jarakHaversine(awal, akhir);
         if (chord < 1) {
           toast.error("Busur terlalu kecil — klik awal dan akhir lebih berjauhan.");
           return;
         }
-        simpanBentuk("open", titikBusurSetengah(awal, akhir, tool === "lengkung-kiri" ? "kiri" : "kanan"));
+        simpanBentuk("open", titikBusurSetengah(awal, akhir, tool === "lengkung-kiri" ? "kiri" : "kanan"), undefined, "garis");
       }
     };
 

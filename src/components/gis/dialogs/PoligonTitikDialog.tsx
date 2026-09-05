@@ -134,7 +134,7 @@ export default function PoligonTitikDialog() {
     setMemproses(true);
     try {
       const verts = urutanTitik.map((t) => ({ lat: t.lat, lng: t.lng }));
-      const shape = simpanShapeDariPending(jenis, verts, jenis === "closed" ? "Poligon dari Titik" : "Garis dari Titik", "", warna);
+      const shape = simpanShapeDariPending(jenis, verts, jenis === "closed" ? "Poligon dari Titik" : "Garis dari Titik", "", warna, false, false, undefined, jenis === "closed" ? "poligon" : "garis");
       toast.success(jenis === "closed" ? `Poligon dibuat: ${verts.length} titik` : `Garis dibuat: ${verts.length} titik`, {
         description: `${shape.title} — beri nama lewat dialog yang terbuka.`,
       });

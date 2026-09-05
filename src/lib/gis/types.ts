@@ -5,6 +5,9 @@ export interface LatLng {
   lng: number;
 }
 
+/** Jenis bentuk hasil alat gambar — dipakai pengelompokan folder ekspor KML/KMZ. */
+export type JBentuk = "poligon" | "kotak" | "bulatan" | "elips" | "garis";
+
 /** Layer/group data: satu hasil impor atau kumpulan gambar manual. */
 export interface GisLayer {
   id: string;
@@ -72,6 +75,9 @@ export interface GisShape {
   layerId?: string; // layer pemilik (kosong = Tanpa Layer, selalu tampak)
   /** Garis anak panah — mata panah digambar di ujung AKHIR garis (bentuk "open"). */
   panah?: boolean;
+  /** Jenis alat asal bentuk — dipakai pengelompokan folder ekspor KML/KMZ.
+   *  Kosong = data lama → ditebak dari geometrinya (lihat tebakBentuk di geo.ts). */
+  bentuk?: JBentuk;
   /** Transparansi ISI (0..1) poligon/kotak/bulatan/elips — 0 = garis tepi saja, 1 = warna solid penuh.
    *  Kosong = bawaan 0.15. Tidak berlaku utk garis/panah (tak berisi). */
   isiOpasitas?: number;

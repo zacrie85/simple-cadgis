@@ -108,3 +108,63 @@ export function uid(prefix = "id"): string {
   counter += 1;
   return `${prefix}-${Date.now().toString(36)}-${counter}`;
 }
+
+/** Tebak jenis bentuk dari geometrinya — untuk data LAMA yang belum punya field `bentuk`
+ *  (disimpan sebelum field ini ada). Deteksi:
+ *  - "garis"    : kind open (garis, panah, lengkung — semua masuk folder Garis & Panah)
+ *  - "kotak"    : 4 vertiks dengan tepi sejajar sumbu (hasil alat Kotak)
+ *  - "bulatan"  : ≥8 vertiks, semua berjarak hampir sama dari pusat (simpangan < 2%)
+ *  - "elips"    : ≥8 vertiks, lulus uji elips sumbu-sejajar (kuadrat-terkecil x²/rx²+y²/ry²=1)
+ *  - "poligon"  : sisanya.
+ *  Proyeksi lokal equirectangular sama dengan buatProyeksi MapCanvas. */
+export function tebakBentuk(s: { kind: "closed" | "open"; vertices: LatLng[] }): "poligon" | "kotak" | "bulatan" | "elips" | "garis" {
+  const v = s.vertices;
+  if (s.kind === "open") return "garis";
+  if (v.length < 3) return "poligon";
+  const lat0 = v.reduce((a, p) => a + p.lat, 0) / v.length;
+  const lng0 = v.reduce((a, p) => a + p.lng, 0) / v.length;
+  const mx = 111320 * Math.cos((lat0 * Math.PI) / 180);
+  const my = 110540;
+  const pts = v.map((p) => ({ x: (p.lng - lng0) * mx, y: (p.lat - lat0) * my }));
+
+  // ---- kotak: tepi tiap ruas sejajar sumbu X atau Y ----
+  if (v.length === 4) {
+    const tegak = pts.every((p, i) => {
+      const q = pts[(i + 1) % 4];
+      return Math.abs(p.x - q.x) < Math.abs(p.y - q.y) * 1e-3 || Math.abs(p.y - q.y) < Math.abs(p.x - q.x) * 1e-3;
+    });
+    if (tegak) return "kotak";
+  }
+  if (v.length < 8) return "poligon";
+
+  // ---- bulatan: simpangan radius dari pusat < 2% ----
+  const r = pts.map((p) => Math.hypot(p.x, p.y));
+  const rMean = r.reduce((a, b) => a + b, 0) / r.length;
+  if (rMean > 0) {
+    const cv = Math.sqrt(r.reduce((a, b) => a + (b - rMean) ** 2, 0) / r.length) / rMean;
+    if (cv < 0.02) return "bulatan";
+  }
+
+  // ---- elips sumbu-sejajar: LSQ A·x² + B·y² = 1 (A = 1/rx², B = 1/ry²) ----
+  let Suu = 0, Sww = 0, Suw = 0, Su = 0, Sw = 0;
+  for (const p of pts) {
+    const u = p.x * p.x;
+    const w = p.y * p.y;
+    Suu += u * u;
+    Sww += w * w;
+    Suw += u * w;
+    Su += u;
+    Sw += w;
+  }
+  const det = Suu * Sww - Suw * Suw;
+  if (Math.abs(det) > 1e-9) {
+    const A = (Sww * Su - Suw * Sw) / det;
+    const B = (Suu * Sw - Suw * Su) / det;
+    if (A > 0 && B > 0) {
+      let res = 0;
+      for (const p of pts) res += (A * p.x * p.x + B * p.y * p.y - 1) ** 2;
+      if (Math.sqrt(res / pts.length) < 0.01) return "elips";
+    }
+  }
+  return "poligon";
+}

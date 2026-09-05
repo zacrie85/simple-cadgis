@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useGis } from "@/lib/gis/store";
-import { bangunKML, kmlKeKmz, kmlString } from "@/lib/gis/kml";
+import { bangunKML, kmlKeKmz } from "@/lib/gis/kml";
 import { shapefileZip } from "@/lib/gis/shapefile";
 import { excelZip, excelTabel } from "@/lib/gis/excelExport";
 import { bangunGpx, bangunDxf } from "@/lib/gis/gpxdxf";
@@ -23,10 +23,19 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Download, FileArchive, FileSpreadsheet, Map, FileDigit, Box } from "lucide-react";
+import { Download, FileArchive, FileCode, FileSpreadsheet, Map, FileDigit, Box } from "lucide-react";
 
 type Target = "titik" | "bentuk" | "tabel";
-type Format = "kmz" | "xlsx" | "shp" | "gpx" | "dxf";
+type Format = "kmz" | "kml" | "xlsx" | "shp" | "gpx" | "dxf";
+
+/** Unduh hasil KML sesuai format pilihan: KMZ (zip) atau KML mentah. */
+function unduhKml(kml: string, format: "kmz" | "kml", namaDasar: string) {
+  if (format === "kmz") {
+    unduhBlob(kmlKeKmz(kml, namaDasar), `${namaDasar}.kmz`, "application/vnd.google-earth.kmz");
+  } else {
+    unduhBlob(kml, `${namaDasar}.kml`, "application/vnd.google-earth.kml+xml");
+  }
+}
 
 export default function ExportDialog() {
   const open = useGis((s) => s.dialogs.export);
@@ -121,9 +130,9 @@ export default function ExportDialog() {
           toast.error("Tidak ada titik untuk diekspor");
           return;
         }
-        if (format === "kmz") {
+        if (format === "kmz" || format === "kml") {
           const kml = bangunKML({ points: pilih, namaDokumen: "Ekspor Titik SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
-          unduhBlob(kmlKeKmz(kml, "titik"), `SIMPLE-CADGIS-Titik-${ts}.kmz`, "application/vnd.google-earth.kmz");
+          unduhKml(kml, format, `SIMPLE-CADGIS-Titik-${ts}`);
         } else if (format === "xlsx") {
           await excelZip({ points: pilih, proyeksi: proy, labelCrs: diproyeksikan ? namaCrs : undefined }, `SIMPLE-CADGIS-Titik-${ts}.xlsx`);
         } else {
@@ -154,9 +163,9 @@ export default function ExportDialog() {
           toast.error("Tidak ada poligon/garis untuk diekspor");
           return;
         }
-        if (format === "kmz") {
+        if (format === "kmz" || format === "kml") {
           const kml = bangunKML({ shapes: bentuk, namaDokumen: "Ekspor Poligon SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
-          unduhBlob(kmlKeKmz(kml, "bentuk"), `SIMPLE-CADGIS-Poligon-${ts}.kmz`, "application/vnd.google-earth.kmz");
+          unduhKml(kml, format, `SIMPLE-CADGIS-Bentuk-${ts}`);
         } else if (format === "xlsx") {
           await excelZip({ shapes: bentuk, proyeksi: proy, labelCrs: diproyeksikan ? namaCrs : undefined }, `SIMPLE-CADGIS-Poligon-${ts}.xlsx`);
         } else {
@@ -196,11 +205,11 @@ export default function ExportDialog() {
         ];
         await excelTabel(header, baris, `SIMPLE-CADGIS-Tabel-${ts}.xlsx`, "Atribut");
         toast.success("Tabel diekspor ke Excel");
-      } else if (format === "kmz") {
+      } else if (format === "kmz" || format === "kml") {
         const kml = bangunKML({ points: pilih, shapes: bentuk, contours, namaDokumen: "Ekspor Tabel SIMPLE CADGIS", labelMode: useGis.getState().labelMode });
-        if (format === "kmz" && kmlString(kml).length === 0) throw new Error("Kosong");
-        unduhBlob(kmlKeKmz(kml, "tabel"), `SIMPLE-CADGIS-Tabel-${ts}.kmz`, "application/vnd.google-earth.kmz");
-        toast.success("Tabel diekspor ke KMZ");
+        if (kml.length === 0) throw new Error("Kosong");
+        unduhKml(kml, format, `SIMPLE-CADGIS-Tabel-${ts}`);
+        toast.success(`Tabel diekspor ke ${format.toUpperCase()}`);
       } else {
         if (pilih.length > 0) {
           unduhBlob(
@@ -293,7 +302,7 @@ export default function ExportDialog() {
               utmAwal={saranUtm}
             />
             <p className="text-[10px] text-slate-400">
-              Default: WGS84 derajat (standar web & GPS). KMZ/GPX selalu WGS84 sesuai spesifikasi.
+              Default: WGS84 derajat (standar web & GPS). KMZ/KML/GPX selalu WGS84 sesuai spesifikasi.
               Saran zona UTM dari pusat data: zona {saranUtm.zona}{saranUtm.hemi}.
             </p>
           </div>
@@ -301,9 +310,13 @@ export default function ExportDialog() {
           <div className="space-y-1.5">
             <Label>Format keluaran</Label>
             <div className="grid grid-cols-3 gap-2">
-              <Button variant="outline" className="rounded-xl h-auto py-3 flex-col gap-1" onClick={() => ekspor("kmz")}>
+              <Button variant="outline" className="rounded-xl h-auto py-3 flex-col gap-1" onClick={() => ekspor("kmz")} title="Google Earth terkompresi — tersusun folder per jenis (titik per ikon, poligon, kotak, elips, bulatan, garis & panah)">
                 <FileArchive className="h-5 w-5 text-amber-600" />
                 <span className="text-xs font-medium">KMZ</span>
+              </Button>
+              <Button variant="outline" className="rounded-xl h-auto py-3 flex-col gap-1" onClick={() => ekspor("kml")} title="KML mentah — isi sama dengan KMZ (folder per jenis), satu file ringan">
+                <FileCode className="h-5 w-5 text-indigo-600" />
+                <span className="text-xs font-medium">KML</span>
               </Button>
               <Button variant="outline" className="rounded-xl h-auto py-3 flex-col gap-1" onClick={() => ekspor("xlsx")}>
                 <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
@@ -323,7 +336,8 @@ export default function ExportDialog() {
               </Button>
             </div>
             <p className="text-[10px] text-slate-400">
-              GPX & DXF menggabungkan titik + poligon/garis + teks sesuai cakupan. DWG tidak tersedia untuk ekspor — pakai DXF (AutoCAD bisa membukanya langsung).
+              KMZ &amp; KML selalu WGS84 sesuai spesifikasi KML — hasilnya tersusun folder: Titik Koordinat (sub-folder per ikon), Poligon, Kotak, Elips, Bulatan, Garis &amp; Panah, Kontur.
+              GPX &amp; DXF menggabungkan titik + poligon/garis + teks sesuai cakupan. DWG tidak tersedia untuk ekspor — pakai DXF (AutoCAD bisa membukanya langsung).
             </p>
           </div>
         </div>
