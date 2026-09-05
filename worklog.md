@@ -1108,3 +1108,22 @@ Stage Summary:
 - Warna & ikon titik serta warna garis/isi bentuk kini dibawa ke Google Earth (tint paddle + LineStyle/PolyStyle) — memudahkan membaca as-plan-build jaringan FO.
 - Data lama (sebelum field bentuk) tetap benar folder-nya lewat tebakBentuk; data baru menyimpan alat asalnya secara eksplisit.
 - Pelajaran sandbox: selalu cek git log/remote sebelum kerja — rollback diam-diam bisa terjadi; pemulihan = reset --hard ke origin/main.
+
+---
+Task ID: 51
+Agent: Super Z (main)
+Task: Task 51 — RILIS v1.10.0 (permintaan user: "Rilis v1.10.0 sekarang kawan") — installer + Pages berisi fitur Task 50 (ekspor KML + KMZ/KML per folder)
+
+Work Log:
+- Pra-rilis: cek kondisi repo (pelajaran rollback Task 50) — HEAD c2dc938 (fitur Task 50) sudah ter-push, work tree bersih (noise mode file disembunyikan via core.fileMode=false), remote ok, SW v22, versi 1.9.0.
+- Grep "1.9.0" seluruh repo → hanya package.json yang perlu bump (entri worklog = historis). package.json 1.9.0 → 1.10.0.
+- Commit "chore: bump versi 1.10.0" (1e663a9) → tag annotasi v1.10.0 (pesan berisi ringkasan fitur Task 50: ekspor KML, folder per jenis utk KMZ & KML, warna/ikon dibawa ke Google Earth, tebakBentuk utk data lama) → push main + tag sekaligus.
+- Pantau Actions: 2 workflow paralel — Build Installer (run 33974713109, tag v1.10.0) & Deploy Pages (run 33974712794, main). Build installer ±9 menit → SUCCESS.
+- Verifikasi release API: "SIMPLE CADGIS v1.10.0", draft=false, prerelease=false, published 2026-09-05T15:30:35Z, asset SIMPLE-CADGIS-Setup-1.10.0.exe 197.709.202 byte.
+- Verifikasi unduh ANONIM: resolve redirect release-assets.githubusercontent.com manual (tanpa Authorization) → unduh 197.709.202 byte persis → header MZ OK + PE\0\0 OK @ e_lfanew 0xd8 → installer EXE valid → file uji dihapus.
+- Verifikasi Pages live: sw.js = simplecadgis-v22; deploy Pages SUCCESS.
+
+Stage Summary:
+- v1.10.0 TERBIT: https://github.com/zacrie85/simple-cadgis/releases/tag/v1.10.0 — installer Windows valid & bisa diunduh publik; Pages live dgn SW v22.
+- Isi v1.10.0: ekspor KML (.kml) baru; KMZ & KML tersusun FOLDER per jenis (titik sub-folder per ikon Pin/Tarikan/ODP/dll, Poligon/Kotak/Elips/Bulatan folder sendiri, Garis & Panah gabungan, Kontur); warna & ikon dibawa ke Google Earth; data lama dikenali tebakBentuk.
+- Catatan keamanan berulang: PAT ghp_6CGl… dipakai lagi pada sesi ini — SEGERA revoke & ganti.
